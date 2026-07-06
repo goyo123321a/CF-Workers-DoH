@@ -6,12 +6,9 @@ CF-Workers-DoH 是一个基于 Cloudflare Workers 构建的 DNS over HTTPS (DoH)
 > [!CAUTION]
 > **doh.cmliussss.hidns.co 已被GFW阻断，需自行部署使用。**
 
-> [!WARNING]
-> 如需搭建非公益服务，请务必添加`TOKEN`与`URL`变量，`URL`变量推荐为 **nginx** 即可！
-
 ## 🚀 部署方式
 
-- **Workers** 部署：复制 [_worker.js](https://github.com/cmliu/CF-Workers-DoH/blob/main/_worker.js) 代码，`保存并部署`即可
+- **Workers** 部署：复制 [_worker.js](https://github.com/goyo123321a/CF-Workers-DoH/blob/main/_worker.js) 代码，`保存并部署`即可
 - **Pages** 部署：`Fork` 后 `连接GitHub` 一键部署即可
 
 ## 📖 使用方法
