@@ -93,8 +93,7 @@ DOH_CONFIG
 ### Curl使用示例
 # GET 请求 - A记录 (IPv4)
 ```
-curl -H "accept: application/dns-json" \
-  "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=A"
+curl "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=A"
 ```
 
 # GET 请求带 Accept 头- AAAA记录 (ipv6)
