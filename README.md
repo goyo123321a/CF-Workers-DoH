@@ -106,6 +106,7 @@ curl -H "accept: application/dns-json" \
 ```
 curl -H "accept: application/dns-json" \
   "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=AAA"
+```
 
 # GET 请求 – Wire Format（?dns=）
 # 查询 google.com A 记录（Base64URL 编码示例）
