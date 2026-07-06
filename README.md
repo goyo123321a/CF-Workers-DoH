@@ -83,19 +83,67 @@ https://doh.cmliussss.hidns.co/ip-info?ip=8.8.8.8&token=CMLiussss
 
 ## 🔧 变量说明
 
-| 变量名 | 示例 | 必填 | 备注 | 
-|--|--|--|--|
-| DOH | `dns.google` |❌| 设置上游DoH服务（默认：`cloudflare-dns.com`） |
-| TOKEN | `dns-query` |❌| 设置请求DoH服务路径（默认：`/dns-query`） |
-| URL | `https://www.baidu.com/` |❌| 主页伪装（设为`nginx`则伪装为nginx默认页面） |
-| URL302 | `https://t.me/CMLiussss` |❌| 主页302跳转（与`URL`变量同时存在时优先执行`URL302`）|
+### 📋 环境变量
 
-> [!TIP]
-> 1. 使用 `dns.google` 或 `cloudflare-dns.com` 作为DoH上游时，**解析速度最佳**！
-> 2. 使用 `security.cloudflare-dns.com` 作为DoH上游时，可**阻止恶意软件**的DNS解析服务；
-> 3. 使用 `family.cloudflare-dns.com` 作为DoH上游时，可**阻止恶意软件**和**成人内容**的DNS解析服务；
-> 4. 已知 `doh.pub` **自带污染**，不适合作为DoH上游；
-> 5. 目前 `sm2.doh.pub`、`dns.alidns.com` 和 `doh.360.cn` 在**非中国大陆环境**请求DoH时，会下发干净DNS解析服务，也就是**可以作为CF-DoH的上游**，但是**解析速度不佳**。
+| 变量名 | 是否必须 | 默认值 | 说明 |
+|--------|----------|--------|------|
+| DOH_PATH | 否 | dns-query |  服务端点路径（优先级最高） dns-query my-dns, query, doh |
+| TOKEN | 否 | dns-query | 备选 DoH 路径 |
+| ADMIN_USER | 否 | admin | 管理员登录用户名 admin |
+| ADMIN_PASS | 否 | 123321 | 管理员登录密码 123321 |
+
+### KV变量(名称随意)
+DOH_CONFIG
+
+### Curl使用示例
+# GET 请求 - A记录 (IPv4)
+```
+curl -H "accept: application/dns-json" \
+  "https://zwmztkpw-wzvigdwr.hf.space/123a?name=google.com&type=A"
+```
+
+# GET 请求 - HTTPS记录 (ECH配置)
+```
+curl -H "accept: application/dns-json" \
+  "https://zwmztkpw-wzvigdwr.hf.space/123a?name=cloudflare-ech.com&type=HTTPS"
+```
+
+# GET 请求 – Wire Format（?dns=）
+# 查询 google.com A 记录（Base64URL 编码示例）
+```
+curl -H "accept: application/dns-message" \
+  "https://hcfcwwba-oleksxxr.hf.space/node-doh?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE"
+```
+预期：返回二进制 DNS 数据（终端会显示乱码，这是正常的）。
+验证响应头：content-type: application/dns-message
+
+# POST 请求 - JSON格式 (A记录)
+```
+curl -X POST -H "Content-Type: application/dns-json" \
+  -d '{"name":"google.com","type":"A"}' \
+  "https://zwmztkpw-wzvigdwr.hf.space/123a"
+```
+
+# POST 请求 - 表单格式 (A记录)
+```
+curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "name=google.com&type=A" \
+  "https://zwmztkpw-wzvigdwr.hf.space/123a"
+```
+
+# POST 请求 – Wire Format（原始二进制）
+```bash
+echo -n "AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE" | base64 -d > query.bin
+curl -X POST -H "Content-Type: application/dns-message" --data-binary @query.bin \
+  "https://cfdoh.lmaqn.de5.net/cf-doh"
+```
+
+# 浏览器访问 (直接显示JSON)
+https://zwmztkpw-wzvigdwr.hf.space/123a?name=google.com&type=A
+
+# 浏览器配置 DoH
+Chrome/Edge: 设置 → 隐私和安全 → 安全 → 使用安全 DNS → 自定义
+填入: https://zwmztkpw-wzvigdwr.hf.space/123a
 
 ## ⭐ Star 星星走起
 [![Stargazers over time](https://starchart.cc/cmliu/CF-Workers-DoH.svg?variant=adaptive)](https://starchart.cc/cmliu/CF-Workers-DoH)
