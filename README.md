@@ -102,11 +102,10 @@ curl -H "accept: application/dns-json" \
   "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=A"
 ```
 
-# GET 请求 - HTTPS记录 (ECH配置)
+# GET 请求带 Accept 头- AAA记录 (ipv6)
 ```
 curl -H "accept: application/dns-json" \
-  "https://cfdoh.xxas.xx.kg/cf-doh?name=cloudflare-ech.com&type=HTTPS"
-```
+  "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=AAA"
 
 # GET 请求 – Wire Format（?dns=）
 # 查询 google.com A 记录（Base64URL 编码示例）
