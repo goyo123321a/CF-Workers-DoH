@@ -84,8 +84,6 @@ https://doh.cmliussss.hidns.co/ip-info?ip=8.8.8.8&token=CMLiussss
 
 | 变量名 | 是否必须 | 默认值 | 说明 |
 |--------|----------|--------|------|
-| DOH_PATH | 否 | dns-query |  服务端点路径（优先级最高） dns-query my-dns, query, doh |
-| TOKEN | 否 | dns-query | 备选 DoH 路径 |
 | ADMIN_USER | 否 | admin | 管理员登录用户名 admin |
 | ADMIN_PASS | 否 | 123321 | 管理员登录密码 123321 |
 
