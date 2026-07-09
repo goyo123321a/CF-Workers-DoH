@@ -2,23 +2,19 @@
 const ENV_DEFAULTS = {
   ADMIN_USER: 'admin',
   ADMIN_PASS: '123321',
-  CACHE_TTL: 60 * 1000,        // 配置缓存 1 分钟
   SESSION_TTL: 3600,           // Session 1 小时
-  FASTEST_TIMEOUT: 5000,       // 实时选择超时 5 秒
-  MAX_FAILOVER_ATTEMPTS: 3,    // 故障转移最大尝试次数（已弃用，但保留）
+  FASTEST_TIMEOUT: 5000,       // 单个上游超时 5 秒
 };
 
 // ==================== 全局缓存 ====================
 let cachedConfig = null;
-let cacheExpiry = 0;
 const CONFIG_KEY = 'config';
-const SESSION_PREFIX = 'session:';
 
 // ==================== 核心工具函数 ====================
 
-// 从 KV 获取配置（带缓存）
+// 从 KV 获取配置（缓存无限期，仅在首次或 saveConfig 刷新）
 async function getConfig(env) {
-  if (Date.now() < cacheExpiry && cachedConfig) {
+  if (cachedConfig) {
     return cachedConfig;
   }
   try {
@@ -43,7 +39,6 @@ async function getConfig(env) {
         enable_auto_select: true
       };
       cachedConfig = defaultConfig;
-      cacheExpiry = Date.now() + ENV_DEFAULTS.CACHE_TTL;
       return defaultConfig;
     }
     const data = await kv.get(CONFIG_KEY, 'json');
@@ -65,11 +60,10 @@ async function getConfig(env) {
       enable_auto_select: true
     };
     cachedConfig = config;
-    cacheExpiry = Date.now() + ENV_DEFAULTS.CACHE_TTL;
     return config;
   } catch (e) {
     console.error('KV 读取失败，使用默认配置', e);
-    return {
+    const fallback = {
       upstreams: [
         { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true },
         { id: 'alidns', name: '阿里 DNS', url: 'https://dns.alidns.com/resolve', enabled: true }
@@ -79,23 +73,23 @@ async function getConfig(env) {
       doh_path: 'dns-query',
       enable_auto_select: true
     };
+    cachedConfig = fallback;
+    return fallback;
   }
 }
 
-// 保存配置到 KV
+// 保存配置到 KV，并更新缓存
 async function saveConfig(env, config) {
   const kv = env.DOH_CONFIG;
   if (!kv) {
     cachedConfig = config;
-    cacheExpiry = Date.now() + ENV_DEFAULTS.CACHE_TTL;
     return;
   }
   await kv.put(CONFIG_KEY, JSON.stringify(config));
   cachedConfig = config;
-  cacheExpiry = Date.now() + ENV_DEFAULTS.CACHE_TTL;
 }
 
-// Session 管理
+// Session 管理（使用 Cache API）
 function generateSessionId() {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 }
@@ -103,10 +97,16 @@ function generateSessionId() {
 async function createSession(env, username) {
   const sid = generateSessionId();
   const expires = Date.now() + ENV_DEFAULTS.SESSION_TTL * 1000;
-  const kv = env.DOH_CONFIG;
-  if (kv) {
-    await kv.put(`${SESSION_PREFIX}${sid}`, JSON.stringify({ username, expires }), { expirationTtl: ENV_DEFAULTS.SESSION_TTL });
-  }
+  const data = JSON.stringify({ username, expires });
+  const cacheUrl = `https://internal/session/${sid}`;
+  const cache = caches.default;
+  const request = new Request(cacheUrl);
+  const response = new Response(data, {
+    headers: {
+      'Cache-Control': `max-age=${ENV_DEFAULTS.SESSION_TTL}`
+    }
+  });
+  await cache.put(request, response);
   return sid;
 }
 
@@ -116,14 +116,16 @@ async function validateSession(env, request) {
   const match = cookie.split(';').find(c => c.trim().startsWith('session_id='));
   if (!match) return null;
   const sid = match.split('=')[1].trim();
-  const kv = env.DOH_CONFIG;
-  if (!kv) return null;
-  const session = await kv.get(`${SESSION_PREFIX}${sid}`, 'json');
-  if (!session || session.expires < Date.now()) {
-    if (session) await kv.delete(`${SESSION_PREFIX}${sid}`);
+  const cacheUrl = `https://internal/session/${sid}`;
+  const cache = caches.default;
+  const cachedResponse = await cache.match(new Request(cacheUrl));
+  if (!cachedResponse) return null;
+  const data = await cachedResponse.json();
+  if (!data || data.expires < Date.now()) {
+    await cache.delete(new Request(cacheUrl));
     return null;
   }
-  return session.username;
+  return data.username;
 }
 
 async function destroySession(env, request) {
@@ -132,8 +134,8 @@ async function destroySession(env, request) {
   const match = cookie.split(';').find(c => c.trim().startsWith('session_id='));
   if (match) {
     const sid = match.split('=')[1].trim();
-    const kv = env.DOH_CONFIG;
-    if (kv) await kv.delete(`${SESSION_PREFIX}${sid}`);
+    const cacheUrl = `https://internal/session/${sid}`;
+    await caches.default.delete(new Request(cacheUrl));
   }
 }
 
@@ -158,12 +160,11 @@ async function requireAdmin(env, request) {
   if (username !== expected) {
     return new Response('Forbidden', { status: 403 });
   }
-  return null; // 通过
+  return null;
 }
 
 // ==================== DNS 查询核心函数 ====================
 
-// 向指定 DoH 服务器查询单个记录类型
 async function queryDns(dohUrl, domain, type) {
   const url = new URL(dohUrl);
   url.searchParams.set('name', domain);
@@ -196,7 +197,6 @@ async function queryDns(dohUrl, domain, type) {
   throw lastError || new Error('所有 DoH 尝试均失败');
 }
 
-// 查询 A、AAAA、NS 并合并结果
 async function queryMultipleTypes(dohUrl, domain) {
   const [ipv4Result, ipv6Result, nsResult] = await Promise.all([
     queryDns(dohUrl, domain, 'A'),
@@ -239,47 +239,50 @@ async function queryMultipleTypes(dohUrl, domain) {
   };
 }
 
-// ==================== 实时选择最快上游 ====================
+// ==================== 实时选择最快上游（竞速模式） ====================
 
-// 并发请求所有启用的上游，返回最快响应的那个（或 null）
 async function selectFastestUpstream(env, config, domain, type = 'A') {
   const enabled = config.upstreams.filter(u => u.enabled);
   if (enabled.length === 0) return null;
 
-  // 构造每个上游的请求，但只请求状态码和响应时间
-  const fetchPromises = enabled.map(async (upstream) => {
-    const start = Date.now();
-    try {
+  const fetchPromises = enabled.map((upstream) => {
+    return new Promise((resolve, reject) => {
       const url = new URL(upstream.url);
-      url.searchParams.set('name', domain || 'google.com'); // 若未指定查询域名，用 google.com 测试
+      url.searchParams.set('name', domain || 'google.com');
       url.searchParams.set('type', type);
-      const resp = await fetch(url.toString(), {
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`Timeout: ${upstream.name}`));
+      }, ENV_DEFAULTS.FASTEST_TIMEOUT);
+
+      fetch(url.toString(), {
         headers: { 'Accept': 'application/dns-json' },
-        signal: AbortSignal.timeout(ENV_DEFAULTS.FASTEST_TIMEOUT)
-      });
-      const elapsed = Date.now() - start;
-      if (!resp.ok) {
-        return { id: upstream.id, alive: false, latency: Infinity };
-      }
-      // 快速检查是否为 JSON（不解析）
-      const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('json')) {
-        // 可能不是 JSON，但有些服务器返回 text/plain 但内容仍是 JSON，我们尝试读取一小部分判断
-        // 为简化，我们默认接受任何 200 响应
-      }
-      return { id: upstream.id, alive: true, latency: elapsed };
-    } catch (err) {
-      return { id: upstream.id, alive: false, latency: Infinity };
-    }
+        signal: controller.signal
+      })
+        .then(resp => {
+          clearTimeout(timeoutId);
+          if (!resp.ok) {
+            reject(new Error(`HTTP ${resp.status}: ${upstream.name}`));
+            return;
+          }
+          resolve({ id: upstream.id, upstream });
+        })
+        .catch(err => {
+          clearTimeout(timeoutId);
+          reject(err);
+        });
+    });
   });
 
-  const results = await Promise.all(fetchPromises);
-  // 筛选出存活的，按延迟升序
-  const alive = results.filter(r => r.alive).sort((a, b) => a.latency - b.latency);
-  if (alive.length === 0) return null;
-  // 返回对应的 upstream 对象
-  const fastestId = alive[0].id;
-  return config.upstreams.find(u => u.id === fastestId);
+  try {
+    const fastest = await Promise.any(fetchPromises);
+    return fastest.upstream;
+  } catch (error) {
+    console.warn('所有上游均不可用:', error.errors?.map(e => e.message).join(', '));
+    return null;
+  }
 }
 
 // ==================== 管理 API 处理器 ====================
@@ -292,12 +295,9 @@ async function handleAdminAPI(request, env, url) {
   const config = await getConfig(env);
 
   try {
-    // GET /upstreams
     if (path === 'upstreams' && method === 'GET') {
       return json(config.upstreams);
     }
-
-    // POST /upstreams
     if (path === 'upstreams' && method === 'POST') {
       const body = await request.json();
       if (!body.name || !body.url) return json({ error: '缺少 name 或 url' }, 400);
@@ -312,8 +312,6 @@ async function handleAdminAPI(request, env, url) {
       await saveConfig(env, config);
       return json({ success: true, id: newUpstream.id });
     }
-
-    // PUT /upstreams/:id
     if (path.startsWith('upstreams/') && method === 'PUT') {
       const id = path.split('/')[1];
       const body = await request.json();
@@ -323,8 +321,6 @@ async function handleAdminAPI(request, env, url) {
       await saveConfig(env, config);
       return json({ success: true });
     }
-
-    // DELETE /upstreams/:id
     if (path.startsWith('upstreams/') && method === 'DELETE') {
       const id = path.split('/')[1];
       config.upstreams = config.upstreams.filter(u => u.id !== id);
@@ -335,8 +331,6 @@ async function handleAdminAPI(request, env, url) {
       await saveConfig(env, config);
       return json({ success: true });
     }
-
-    // GET /config
     if (path === 'config' && method === 'GET') {
       return json({
         default: config.default,
@@ -345,8 +339,6 @@ async function handleAdminAPI(request, env, url) {
         enable_auto_select: config.enable_auto_select
       });
     }
-
-    // PUT /config
     if (path === 'config' && method === 'PUT') {
       const body = await request.json();
       if (body.default !== undefined) {
@@ -367,13 +359,10 @@ async function handleAdminAPI(request, env, url) {
       await saveConfig(env, config);
       return json({ success: true });
     }
-
-    // POST /logout
     if (path === 'logout' && method === 'POST') {
       await destroySession(env, request);
       return json({ success: true });
     }
-
     return json({ error: 'API 不存在' }, 404);
   } catch (e) {
     console.error('管理 API 错误:', e);
@@ -381,22 +370,36 @@ async function handleAdminAPI(request, env, url) {
   }
 }
 
-// ==================== 登录处理器 ====================
+// ==================== 登录处理器（已添加错误处理） ====================
 async function handleLogin(request, env) {
-  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  const { username, password } = await request.json();
-  const expectedUser = env.ADMIN_USER || ENV_DEFAULTS.ADMIN_USER;
-  const expectedPass = env.ADMIN_PASS || ENV_DEFAULTS.ADMIN_PASS;
-  if (username === expectedUser && password === expectedPass) {
-    const sid = await createSession(env, username);
-    const response = json({ success: true });
-    response.headers.set(
-      'Set-Cookie',
-      `session_id=${sid}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${ENV_DEFAULTS.SESSION_TTL}`
-    );
-    return response;
+  try {
+    if (request.method !== 'POST') {
+      return json({ error: 'Method not allowed' }, 405);
+    }
+    const { username, password } = await request.json();
+    const expectedUser = env.ADMIN_USER || ENV_DEFAULTS.ADMIN_USER;
+    const expectedPass = env.ADMIN_PASS || ENV_DEFAULTS.ADMIN_PASS;
+    if (username === expectedUser && password === expectedPass) {
+      const sid = await createSession(env, username);
+      const response = json({ success: true });
+      response.headers.set(
+        'Set-Cookie',
+        `session_id=${sid}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${ENV_DEFAULTS.SESSION_TTL}`
+      );
+      return response;
+    }
+    return json({ error: '用户名或密码错误' }, 401);
+  } catch (err) {
+    console.error('Login error:', err);
+    return new Response(JSON.stringify({
+      error: err.message,
+      stack: err.stack,
+      type: err.name
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
-  return json({ error: '用户名或密码错误' }, 401);
 }
 
 // ==================== 公共 API：上游列表 ====================
@@ -410,7 +413,7 @@ async function handlePublicUpstreams(env) {
   return json(list);
 }
 
-// ==================== 管理面板 HTML（简化，移除延迟列和健康检查按钮） ====================
+// ==================== 管理面板 HTML ====================
 function renderAdminPage() {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -651,7 +654,7 @@ function renderLoginPage(message = '') {
 </html>`;
 }
 
-// ==================== 公共首页（保持不变） ====================
+// ==================== 公共首页 ====================
 async function renderPublicPage(env) {
   const config = await getConfig(env);
   const dohPath = config.doh_path || 'dns-query';
@@ -1195,7 +1198,7 @@ async function renderPublicPage(env) {
   });
 }
 
-// ==================== DoH 代理核心（使用实时最快选择） ====================
+// ==================== DoH 代理核心 ====================
 async function DOHRequest(request, env, config) {
   const url = new URL(request.url);
   let serverId = url.searchParams.get('server');
@@ -1208,13 +1211,11 @@ async function DOHRequest(request, env, config) {
     }
   } else {
     if (config.enable_auto_select) {
-      // 实时选择最快上游（使用请求的域名和类型）
       const domain = url.searchParams.get('name') || 'google.com';
       const type = url.searchParams.get('type') || 'A';
       const fastest = await selectFastestUpstream(env, config, domain, type);
       if (fastest) upstream = fastest;
     }
-    // 若未启用自动选择或自动选择失败，使用默认
     if (!upstream) {
       const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
       if (fallback) upstream = fallback;
@@ -1224,11 +1225,9 @@ async function DOHRequest(request, env, config) {
     }
   }
 
-  // 直接转发到选中的上游（无需故障转移，因为实时选择已保证可用）
   try {
     return await forwardToUpstream(request, upstream);
   } catch (err) {
-    // 如果选中的上游失败，尝试故障转移（简单重试其他）
     const allEnabled = config.upstreams.filter(u => u.enabled && u.id !== upstream.id);
     for (const fallback of allEnabled) {
       try {
