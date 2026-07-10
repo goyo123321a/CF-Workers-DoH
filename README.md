@@ -93,20 +93,20 @@ DOH_CONFIG
 ### Curl使用示例
 # GET 请求 - A记录 (IPv4)
 ```
-curl "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=A"
+curl "https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A"
 ```
 
 # GET 请求带 Accept 头- AAAA记录 (ipv6)
 ```
 curl -H "accept: application/dns-json" \
-  "https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=AAAA"
+  "https://doh.goyo123.work.gd/cf-doh?name=google.com&type=AAAA"
 ```
 
 # GET 请求 – Wire Format（?dns=）
 # 查询 google.com A 记录（Base64URL 编码示例）
 ```
 curl -H "accept: application/dns-message" \
-  "https://cfdoh.xxas.xx.kg/cf-doh?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE"
+  "https://doh.goyo123.work.gd/cf-doh?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE"
 ```
 预期：返回二进制 DNS 数据（终端会显示乱码，这是正常的）。
 验证响应头：content-type: application/dns-message
@@ -115,29 +115,29 @@ curl -H "accept: application/dns-message" \
 ```
 curl -X POST -H "Content-Type: application/dns-json" \
   -d '{"name":"google.com","type":"A"}' \
-  "https://cfdoh.xxas.xx.kg/cf-doh"
+  "https://doh.goyo123.work.gd/cf-doh"
 ```
 
 # POST 请求 - 表单格式 (A记录)
 ```
 curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
   -d "name=google.com&type=A" \
-  "https://cfdoh.xxas.xx.kg/cf-doh"
+  "https://doh.goyo123.work.gd/cf-doh"
 ```
 
 # POST 请求 – Wire Format（原始二进制）
 ```bash
 echo -n "AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE" | base64 -d > query.bin
 curl -X POST -H "Content-Type: application/dns-message" --data-binary @query.bin \
-  "https://cfdoh.xxas.xx.kg/cf-doh"
+  "https://doh.goyo123.work.gd/cf-doh"
 ```
 
 # 浏览器访问 (直接显示JSON)
-https://cfdoh.xxas.xx.kg/cf-doh?name=google.com&type=A
+https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A
 
 # 浏览器配置 DoH
 Chrome/Edge: 设置 → 隐私和安全 → 安全 → 使用安全 DNS → 自定义
-填入: https://cfdoh.xxas.xx.kg/cf-doh
+填入: https://doh.goyo123.work.gd/cf-doh
 
 ## ⭐ Star 星星走起
 [![Stargazers over time](https://starchart.cc/cmliu/CF-Workers-DoH.svg?variant=adaptive)](https://starchart.cc/cmliu/CF-Workers-DoH)
