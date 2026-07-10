@@ -1198,7 +1198,7 @@ async function renderPublicPage(env) {
   });
 }
 
-// ==================== DoH 代理核心 ====================
+// ==================== DoH 代理核心（POST 直接转 GET） ====================
 async function DOHRequest(request, env, config) {
   const url = new URL(request.url);
   let serverId = url.searchParams.get('server');
@@ -1248,11 +1248,13 @@ async function forwardToUpstream(request, upstream) {
   const domain = searchParams.get('name');
   const UA = request.headers.get('User-Agent') || 'DoH Client';
 
+  // 处理 type=all
   if (searchParams.get('type') === 'all' && domain) {
     const result = await queryMultipleTypes(upstream.url, domain);
     return json(result);
   }
 
+  // ---------- GET 请求 ----------
   if (method === 'GET') {
     if (searchParams.has('name')) {
       const type = searchParams.get('type') || 'A';
@@ -1290,8 +1292,11 @@ async function forwardToUpstream(request, upstream) {
     throw new Error('Bad Request: missing name or dns parameter');
   }
 
+  // ---------- POST 请求 ----------
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
+
+    // 1) application/dns-message (二进制) — 保持 POST
     if (contentType.includes('application/dns-message')) {
       const response = await fetch(upstream.url, {
         method: 'POST',
@@ -1308,11 +1313,15 @@ async function forwardToUpstream(request, upstream) {
       respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       respHeaders.set('Access-Control-Allow-Headers', '*');
       return new Response(response.body, { status: response.status, headers: respHeaders });
-    } else if (contentType.includes('application/dns-json')) {
+    }
+
+    // 2) application/dns-json — 直接转 GET
+    else if (contentType.includes('application/dns-json')) {
       const jsonBody = await request.json();
       const name = jsonBody.name;
       const type = jsonBody.type || 'A';
       if (!name) throw new Error('Missing "name" in JSON body');
+      
       const targetUrl = new URL(upstream.url);
       targetUrl.searchParams.set('name', name);
       targetUrl.searchParams.set('type', type);
@@ -1322,11 +1331,15 @@ async function forwardToUpstream(request, upstream) {
       if (!response.ok) throw new Error(`Upstream error ${response.status}`);
       const data = await response.json();
       return json(data);
-    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    }
+
+    // 3) application/x-www-form-urlencoded — 直接转 GET
+    else if (contentType.includes('application/x-www-form-urlencoded')) {
       const formData = await request.formData();
       const name = formData.get('name');
       const type = formData.get('type') || 'A';
       if (!name) throw new Error('Missing "name" in form data');
+      
       const targetUrl = new URL(upstream.url);
       targetUrl.searchParams.set('name', name);
       targetUrl.searchParams.set('type', type);
@@ -1336,7 +1349,9 @@ async function forwardToUpstream(request, upstream) {
       if (!response.ok) throw new Error(`Upstream error ${response.status}`);
       const data = await response.json();
       return json(data);
-    } else {
+    }
+
+    else {
       throw new Error('Unsupported Content-Type for POST');
     }
   }
