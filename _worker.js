@@ -25,13 +25,13 @@ async function getConfig(env) {
         upstreams: [
           { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true, region: '全球' },
           { id: 'google', name: 'Google', url: 'https://dns.google/dns-query', enabled: true, region: '全球' },
-          { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: true, region: '全球' },
-          { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: true, region: '全球' },
-          { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: true, region: '中国' },
-          { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: true, region: '中国' },
-          { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: true, region: '中国' },
-          { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: true, region: '全球' },
-          { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: true, region: '全球' }
+          { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: false, region: '全球' },
+          { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: false, region: '全球' },
+          { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: false, region: '中国' },
+          { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: false, region: '中国' },
+          { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: false, region: '中国' },
+          { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: false, region: '全球' },
+          { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: false, region: '全球' }
         ],
         default: 'cloudflare',
         allow_custom: true,
@@ -46,13 +46,13 @@ async function getConfig(env) {
       upstreams: [
         { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true, region: '全球' },
         { id: 'google', name: 'Google', url: 'https://dns.google/dns-query', enabled: true, region: '全球' },
-        { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: true, region: '全球' },
-        { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: true, region: '全球' },
-        { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: true, region: '中国' },
-        { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: true, region: '中国' },
-        { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: true, region: '中国' },
-        { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: true, region: '全球' },
-        { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: true, region: '全球' }
+        { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: false, region: '全球' },
+        { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: false, region: '全球' },
+        { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: false, region: '中国' },
+        { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: false, region: '中国' },
+        { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: false, region: '中国' },
+        { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: false, region: '全球' },
+        { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: false, region: '全球' }
       ],
       default: 'cloudflare',
       allow_custom: true,
@@ -66,7 +66,7 @@ async function getConfig(env) {
     const fallback = {
       upstreams: [
         { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true },
-        { id: 'alidns', name: '阿里 DNS', url: 'https://dns.alidns.com/resolve', enabled: true }
+        { id: 'google', name: 'Google', url: 'https://dns.google/dns-query', enabled: true }
       ],
       default: 'cloudflare',
       allow_custom: true,
@@ -247,7 +247,11 @@ async function selectFastestUpstream(env, config, domain, type = 'A') {
 
   const fetchPromises = enabled.map((upstream) => {
     return new Promise((resolve, reject) => {
-      const url = new URL(upstream.url);
+      let testUrl = upstream.url;
+      if (testUrl.includes('dns.google')) {
+        testUrl = testUrl.replace('/dns-query', '/resolve');
+      }
+      const url = new URL(testUrl);
       url.searchParams.set('name', domain || 'google.com');
       url.searchParams.set('type', type);
 
@@ -370,7 +374,7 @@ async function handleAdminAPI(request, env, url) {
   }
 }
 
-// ==================== 登录处理器（已添加错误处理） ====================
+// ==================== 登录处理器 ====================
 async function handleLogin(request, env) {
   try {
     if (request.method !== 'POST') {
@@ -1198,12 +1202,95 @@ async function renderPublicPage(env) {
   });
 }
 
-// ==================== DoH 代理核心（POST 直接转 GET） ====================
+// ==================== DoH 代理核心（POST 二进制除外强制 Cloudflare/Google） ====================
 async function DOHRequest(request, env, config) {
   const url = new URL(request.url);
-  let serverId = url.searchParams.get('server');
+  const method = request.method;
+  const serverId = url.searchParams.get('server');
   let upstream = null;
 
+  // ---------- POST 请求（非二进制）强制 Cloudflare/Google ----------
+  if (method === 'POST') {
+    const contentType = request.headers.get('Content-Type') || '';
+    // 如果是标准二进制 DNS 消息，则走正常选择逻辑（不强制）
+    if (contentType.includes('application/dns-message')) {
+      // 与 GET 相同的选择逻辑
+      if (serverId) {
+        upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
+        if (!upstream) {
+          return new Response('指定的上游不存在或已禁用', { status: 400 });
+        }
+      } else {
+        if (config.enable_auto_select) {
+          const domain = url.searchParams.get('name') || 'google.com';
+          const type = url.searchParams.get('type') || 'A';
+          const fastest = await selectFastestUpstream(env, config, domain, type);
+          if (fastest) upstream = fastest;
+        }
+        if (!upstream) {
+          const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
+          if (fallback) upstream = fallback;
+        }
+        if (!upstream) {
+          return new Response('没有可用的上游服务器', { status: 503 });
+        }
+      }
+      // 尝试转发，失败则回退（优先 Cloudflare）
+      try {
+        return await forwardToUpstream(request, upstream);
+      } catch (err) {
+        const allEnabled = config.upstreams.filter(u => u.enabled && u.id !== upstream.id);
+        allEnabled.sort((a, b) => {
+          if (a.id === 'cloudflare') return -1;
+          if (b.id === 'cloudflare') return 1;
+          return 0;
+        });
+        for (const fallback of allEnabled) {
+          try {
+            return await forwardToUpstream(request, fallback);
+          } catch (_) {}
+        }
+        return new Response(JSON.stringify({ error: `所有上游均失败: ${err.message}` }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // ---------- 非二进制 POST（JSON / 表单）强制 Cloudflare/Google ----------
+    const preferredIds = ['cloudflare', 'google'];
+    for (const id of preferredIds) {
+      const found = config.upstreams.find(u => u.id === id && u.enabled);
+      if (found) {
+        upstream = found;
+        break;
+      }
+    }
+    if (!upstream) {
+      return new Response(JSON.stringify({ error: '没有可用于 POST 请求的上游 (Cloudflare/Google 未启用)' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    try {
+      return await forwardToUpstream(request, upstream);
+    } catch (err) {
+      const fallbackId = upstream.id === 'cloudflare' ? 'google' : 'cloudflare';
+      const fallback = config.upstreams.find(u => u.id === fallbackId && u.enabled);
+      if (fallback) {
+        try {
+          return await forwardToUpstream(request, fallback);
+        } catch (_) {}
+      }
+      return new Response(JSON.stringify({ error: `POST 请求失败: ${err.message}` }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // ---------- GET 请求（原有逻辑） ----------
   if (serverId) {
     upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
     if (!upstream) {
@@ -1225,10 +1312,16 @@ async function DOHRequest(request, env, config) {
     }
   }
 
+  // GET 故障转移（优先 Cloudflare）
   try {
     return await forwardToUpstream(request, upstream);
   } catch (err) {
     const allEnabled = config.upstreams.filter(u => u.enabled && u.id !== upstream.id);
+    allEnabled.sort((a, b) => {
+      if (a.id === 'cloudflare') return -1;
+      if (b.id === 'cloudflare') return 1;
+      return 0;
+    });
     for (const fallback of allEnabled) {
       try {
         return await forwardToUpstream(request, fallback);
@@ -1241,6 +1334,7 @@ async function DOHRequest(request, env, config) {
   }
 }
 
+// ==================== 请求转发核心（含 Google 路径适配） ====================
 async function forwardToUpstream(request, upstream) {
   const url = new URL(request.url);
   const method = request.method;
@@ -1248,23 +1342,28 @@ async function forwardToUpstream(request, upstream) {
   const domain = searchParams.get('name');
   const UA = request.headers.get('User-Agent') || 'DoH Client';
 
-  // 处理 type=all
+  // Google DoH 特殊处理：使用 /resolve 端点
+  let baseUrl = upstream.url;
+  if (baseUrl.includes('dns.google')) {
+    baseUrl = baseUrl.replace('/dns-query', '/resolve');
+  }
+
+  // 处理 type=all（任何方法）
   if (searchParams.get('type') === 'all' && domain) {
-    const result = await queryMultipleTypes(upstream.url, domain);
+    const result = await queryMultipleTypes(baseUrl, domain);
     return json(result);
   }
 
-  // ---------- GET 请求 ----------
   if (method === 'GET') {
     if (searchParams.has('name')) {
       const type = searchParams.get('type') || 'A';
       const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
-      let response = await fetch(upstream.url + searchDoH, {
+      let response = await fetch(baseUrl + searchDoH, {
         headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
       });
       if (!response.ok) {
-        const resolveUrl = upstream.url.replace(/\/dns-query$/, '/resolve');
-        if (resolveUrl !== upstream.url) {
+        const resolveUrl = baseUrl.replace(/\/dns-query$/, '/resolve');
+        if (resolveUrl !== baseUrl) {
           response = await fetch(resolveUrl + searchDoH, {
             headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
           });
@@ -1279,7 +1378,7 @@ async function forwardToUpstream(request, upstream) {
       return new Response(response.body, { status: response.status, headers: respHeaders });
     }
     if (url.search) {
-      const response = await fetch(upstream.url + url.search, {
+      const response = await fetch(baseUrl + url.search, {
         headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
       });
       if (!response.ok) throw new Error(`Upstream error ${response.status}`);
@@ -1292,13 +1391,10 @@ async function forwardToUpstream(request, upstream) {
     throw new Error('Bad Request: missing name or dns parameter');
   }
 
-  // ---------- POST 请求 ----------
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
-
-    // 1) application/dns-message (二进制) — 保持 POST
     if (contentType.includes('application/dns-message')) {
-      const response = await fetch(upstream.url, {
+      const response = await fetch(baseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/dns-message',
@@ -1313,45 +1409,31 @@ async function forwardToUpstream(request, upstream) {
       respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       respHeaders.set('Access-Control-Allow-Headers', '*');
       return new Response(response.body, { status: response.status, headers: respHeaders });
-    }
-
-    // 2) application/dns-json — 直接转 GET
-    else if (contentType.includes('application/dns-json')) {
+    } else if (contentType.includes('application/dns-json')) {
       const jsonBody = await request.json();
       const name = jsonBody.name;
       const type = jsonBody.type || 'A';
       if (!name) throw new Error('Missing "name" in JSON body');
-      
-      const targetUrl = new URL(upstream.url);
-      targetUrl.searchParams.set('name', name);
-      targetUrl.searchParams.set('type', type);
-      const response = await fetch(targetUrl.toString(), {
-        headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
-      });
-      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-      const data = await response.json();
-      return json(data);
-    }
 
-    // 3) application/x-www-form-urlencoded — 直接转 GET
-    else if (contentType.includes('application/x-www-form-urlencoded')) {
+      if (type === 'all') {
+        const result = await queryMultipleTypes(baseUrl, name);
+        return json(result);
+      }
+      const result = await queryDns(baseUrl, name, type);
+      return json(result);
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const formData = await request.formData();
       const name = formData.get('name');
       const type = formData.get('type') || 'A';
       if (!name) throw new Error('Missing "name" in form data');
-      
-      const targetUrl = new URL(upstream.url);
-      targetUrl.searchParams.set('name', name);
-      targetUrl.searchParams.set('type', type);
-      const response = await fetch(targetUrl.toString(), {
-        headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
-      });
-      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-      const data = await response.json();
-      return json(data);
-    }
 
-    else {
+      if (type === 'all') {
+        const result = await queryMultipleTypes(baseUrl, name);
+        return json(result);
+      }
+      const result = await queryDns(baseUrl, name, type);
+      return json(result);
+    } else {
       throw new Error('Unsupported Content-Type for POST');
     }
   }
