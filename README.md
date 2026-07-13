@@ -20,40 +20,30 @@ CF-Workers-DoH 是一个基于 Cloudflare Workers 构建的 DNS over HTTPS (DoH)
 将以下地址添加到支持DoH的设备或软件中：
 
 ```url
-https://doh.cmliussss.hidns.co/dns-query
+https://doh.goyo123.work.gd/cf-doh
 ```
 
 - 还可使用 Cloudflare 回源端口 `2053`、`2083`、`2087`、`2096`、`8443`，例如
 ```url
-https://doh.cmliussss.hidns.co:2053/dns-query
+https://doh.goyo123.work.gd:2053/cf-doh
 ```
 
-- 如您设置了`TOKEN`变量为 **CMLiussss**，则
+- 还可以通过后台更改路径
 ```url
-https://doh.cmliussss.hidns.co/CMLiussss
+https://doh.goyo123.work.gd/cf-doh
 ```
 ### 2️⃣ 附加功能 IP信息查询
 
 #### 🔍 查询当前IP信息
 ```url
-https://doh.cmliussss.hidns.co/ip-info
-```
-
-- 如您设置了`TOKEN`变量为 **CMLiussss**，则
-```url
-https://doh.cmliussss.hidns.co/ip-info?token=CMLiussss
+https://doh.goyo123.work.gd/ip-info
 ```
 
 #### 🔍 查询指定IP信息
 ```url
-https://doh.cmliussss.hidns.co/ip-info?ip=8.8.8.8
+https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
 ```
 
-- 如您设置了`TOKEN`变量为 **CMLiussss**，则
-
-```url
-https://doh.cmliussss.hidns.co/ip-info?ip=8.8.8.8&token=CMLiussss
-```
 
 #### 📝 **返回信息示例**
 ```json
@@ -76,7 +66,7 @@ https://doh.cmliussss.hidns.co/ip-info?ip=8.8.8.8&token=CMLiussss
 ```
 
 > [!NOTE]
-> 请将示例中的 `doh.cmliussss.hidns.co` 替换为你实际部署的域名
+> 请将示例中的 `doh.goyo123.work.gd` 替换为你实际部署的域名
 
 ## 🔧 变量说明
 
