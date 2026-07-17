@@ -3,7 +3,6 @@ const ENV_DEFAULTS = {
   ADMIN_USER: 'admin',
   ADMIN_PASS: '123321',
   SESSION_TTL: 3600,           // Session 1 小时
-  FASTEST_TIMEOUT: 5000,       // 单个上游超时 5 秒
 };
 
 // ==================== 全局缓存 ====================
@@ -12,7 +11,7 @@ const CONFIG_KEY = 'config';
 
 // ==================== 核心工具函数 ====================
 
-// 从 KV 获取配置（缓存无限期，仅在首次或 saveConfig 刷新）
+// 从 KV 获取配置（缓存无限期）
 async function getConfig(env) {
   if (cachedConfig) {
     return cachedConfig;
@@ -25,13 +24,13 @@ async function getConfig(env) {
         upstreams: [
           { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true, region: '全球' },
           { id: 'google', name: 'Google', url: 'https://dns.google/dns-query', enabled: true, region: '全球' },
-          { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: false, region: '全球' },
-          { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: false, region: '全球' },
-          { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: false, region: '中国' },
-          { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: false, region: '中国' },
-          { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: false, region: '中国' },
-          { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: false, region: '全球' },
-          { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: false, region: '全球' }
+          { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: true, region: '全球' },
+          { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: true, region: '全球' },
+          { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: true, region: '中国' },
+          { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: true, region: '中国' },
+          { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: true, region: '中国' },
+          { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: true, region: '全球' },
+          { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: true, region: '全球' }
         ],
         default: 'cloudflare',
         allow_custom: true,
@@ -46,13 +45,13 @@ async function getConfig(env) {
       upstreams: [
         { id: 'cloudflare', name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query', enabled: true, region: '全球' },
         { id: 'google', name: 'Google', url: 'https://dns.google/dns-query', enabled: true, region: '全球' },
-        { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: false, region: '全球' },
-        { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: false, region: '全球' },
-        { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: false, region: '中国' },
-        { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: false, region: '中国' },
-        { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: false, region: '中国' },
-        { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: false, region: '全球' },
-        { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: false, region: '全球' }
+        { id: 'quad9', name: 'Quad9', url: 'https://dns.quad9.net/dns-query', enabled: true, region: '全球' },
+        { id: 'dns_sb', name: 'DNS.SB', url: 'https://dns.sb/dns-query', enabled: true, region: '全球' },
+        { id: 'alidns', name: '阿里云', url: 'https://dns.alidns.com/dns-query', enabled: true, region: '中国' },
+        { id: 'tencent', name: '腾讯云', url: 'https://doh.pub/dns-query', enabled: true, region: '中国' },
+        { id: 'doh_360', name: '360', url: 'https://doh.360.cn/dns-query', enabled: true, region: '中国' },
+        { id: 'adguard', name: 'AdGuard', url: 'https://dns.adguard-dns.com/dns-query', enabled: true, region: '全球' },
+        { id: 'opendns', name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query', enabled: true, region: '全球' }
       ],
       default: 'cloudflare',
       allow_custom: true,
@@ -239,56 +238,6 @@ async function queryMultipleTypes(dohUrl, domain) {
   };
 }
 
-// ==================== 实时选择最快上游（竞速模式） ====================
-
-async function selectFastestUpstream(env, config, domain, type = 'A') {
-  const enabled = config.upstreams.filter(u => u.enabled);
-  if (enabled.length === 0) return null;
-
-  const fetchPromises = enabled.map((upstream) => {
-    return new Promise((resolve, reject) => {
-      let testUrl = upstream.url;
-      if (testUrl.includes('dns.google')) {
-        testUrl = testUrl.replace('/dns-query', '/resolve');
-      }
-      const url = new URL(testUrl);
-      url.searchParams.set('name', domain || 'google.com');
-      url.searchParams.set('type', type);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-        reject(new Error(`Timeout: ${upstream.name}`));
-      }, ENV_DEFAULTS.FASTEST_TIMEOUT);
-
-      fetch(url.toString(), {
-        headers: { 'Accept': 'application/dns-json' },
-        signal: controller.signal
-      })
-        .then(resp => {
-          clearTimeout(timeoutId);
-          if (!resp.ok) {
-            reject(new Error(`HTTP ${resp.status}: ${upstream.name}`));
-            return;
-          }
-          resolve({ id: upstream.id, upstream });
-        })
-        .catch(err => {
-          clearTimeout(timeoutId);
-          reject(err);
-        });
-    });
-  });
-
-  try {
-    const fastest = await Promise.any(fetchPromises);
-    return fastest.upstream;
-  } catch (error) {
-    console.warn('所有上游均不可用:', error.errors?.map(e => e.message).join(', '));
-    return null;
-  }
-}
-
 // ==================== 管理 API 处理器 ====================
 async function handleAdminAPI(request, env, url) {
   const auth = await requireAdmin(env, request);
@@ -462,7 +411,7 @@ function renderAdminPage() {
         </div>
         <div class="mb-3 form-check">
           <input type="checkbox" class="form-check-input" id="enableAutoSelect">
-          <label class="form-check-label" for="enableAutoSelect">启用自动选择上游（实时最快）</label>
+          <label class="form-check-label" for="enableAutoSelect">启用自动选择上游（随机）</label>
         </div>
         <div class="mb-3">
           <label for="dohPath" class="form-label">DoH 端点路径（如 dns-query）</label>
@@ -887,7 +836,7 @@ async function renderPublicPage(env) {
     <strong>DoH 端点：</strong><span id="dohUrlDisplay" class="copy-link" title="点击复制">https://<span id="currentDomain">${hostname}</span>/${dohPath}</span>
     <br>
     <span id="upstreamInfo">
-      ${autoSelect ? '⚡ 当前模式：<strong>自动选择</strong>（每次请求实时选取最快上游）' : `🔒 固定上游：<strong>${fixedUpstreamName}</strong>`}
+      ${autoSelect ? '⚡ 当前模式：<strong>自动选择</strong>（随机选取上游）' : `🔒 固定上游：<strong>${fixedUpstreamName}</strong>`}
     </span>
     <br>
     <small>管理员可在后台更改配置</small>
@@ -1202,6 +1151,148 @@ async function renderPublicPage(env) {
   });
 }
 
+// ==================== IP 地理位置批量查询（带 Cache API 缓存） ====================
+
+// 生成缓存键
+function ipCacheKey(ip) {
+  return `ipgeo:${ip}`;
+}
+
+// 从 Cache API 获取缓存
+async function getCachedIpInfo(ip, cache) {
+  const cacheKey = ipCacheKey(ip);
+  const cacheUrl = `https://internal/${cacheKey}`;
+  const cachedResponse = await cache.match(new Request(cacheUrl));
+  if (!cachedResponse) return null;
+  const data = await cachedResponse.json();
+  // 检查是否过期（Cache-Control 已控制，但以防万一）
+  if (data._cachedAt && (Date.now() - data._cachedAt > 3600 * 1000)) {
+    await cache.delete(new Request(cacheUrl));
+    return null;
+  }
+  delete data._cachedAt;
+  return data;
+}
+
+// 存入缓存（根据状态决定缓存时长）
+async function setCachedIpInfo(ip, data, cache) {
+  const cacheKey = ipCacheKey(ip);
+  const cacheUrl = `https://internal/${cacheKey}`;
+  const toStore = { ...data, _cachedAt: Date.now() };
+  // 成功缓存 1 小时，失败缓存 60 秒
+  const maxAge = (data.status === 'success') ? 3600 : 60;
+  const response = new Response(JSON.stringify(toStore), {
+    headers: {
+      'Cache-Control': `max-age=${maxAge}, s-maxage=${maxAge}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  await cache.put(new Request(cacheUrl), response);
+}
+
+// 批量查询（自动处理缓存）
+async function batchQueryIpInfo(ips, env) {
+  const cache = caches.default;
+  const results = {};
+  const uncached = [];
+
+  // 1. 先从缓存读取
+  for (const ip of ips) {
+    const cached = await getCachedIpInfo(ip, cache);
+    if (cached) {
+      results[ip] = cached;
+    } else {
+      uncached.push(ip);
+    }
+  }
+
+  // 2. 如果有未缓存的，发起 batch 请求
+  if (uncached.length > 0) {
+    const batchSize = 100;
+    for (let i = 0; i < uncached.length; i += batchSize) {
+      const batch = uncached.slice(i, i + batchSize);
+      try {
+        const resp = await fetch('http://ip-api.com/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(batch)
+        });
+        if (!resp.ok) {
+          throw new Error(`batch request failed: ${resp.status}`);
+        }
+        const data = await resp.json();
+        for (let j = 0; j < batch.length; j++) {
+          const ip = batch[j];
+          const info = data[j] || { status: 'fail', message: 'No data' };
+          if (info.status === 'success') {
+            info.timestamp = new Date().toISOString();
+          } else {
+            info.timestamp = new Date().toISOString();
+          }
+          results[ip] = info;
+          await setCachedIpInfo(ip, info, cache);
+        }
+      } catch (err) {
+        for (const ip of batch) {
+          const errorInfo = { status: 'fail', message: err.message, timestamp: new Date().toISOString() };
+          results[ip] = errorInfo;
+          await setCachedIpInfo(ip, errorInfo, cache);
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+// ==================== IP 地理位置代理（支持单 IP 和批量） ====================
+async function handleIpInfo(request, env) {
+  const url = new URL(request.url);
+  if (env.TOKEN) {
+    const token = url.searchParams.get('token');
+    if (token !== env.TOKEN) {
+      return json({ status: 'error', message: 'Token不正确' }, 403);
+    }
+  }
+
+  const ipParam = url.searchParams.get('ip');
+  const ipsParam = url.searchParams.get('ips');
+
+  // 批量查询
+  if (ipsParam) {
+    const ipList = ipsParam.split(',').map(s => s.trim()).filter(s => s);
+    if (ipList.length === 0) {
+      return json({ error: 'ips 参数为空' }, 400);
+    }
+    if (ipList.length > 100) {
+      return json({ error: '批量查询最多支持 100 个 IP' }, 400);
+    }
+    const results = await batchQueryIpInfo(ipList, env);
+    return json(results);
+  }
+
+  // 单 IP 查询（保持兼容）
+  if (ipParam) {
+    const cache = caches.default;
+    let cached = await getCachedIpInfo(ipParam, cache);
+    if (cached) {
+      return json(cached);
+    }
+    try {
+      const resp = await fetch(`http://ip-api.com/json/${ipParam}?lang=zh-CN`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      data.timestamp = new Date().toISOString();
+      await setCachedIpInfo(ipParam, data, cache);
+      return json(data);
+    } catch (err) {
+      return json({ error: err.message }, 500);
+    }
+  }
+
+  return json({ error: '请提供 ip 或 ips 参数' }, 400);
+}
+
 // ==================== DoH 代理核心（POST 二进制除外强制 Cloudflare/Google） ====================
 async function DOHRequest(request, env, config) {
   const url = new URL(request.url);
@@ -1212,9 +1303,8 @@ async function DOHRequest(request, env, config) {
   // ---------- POST 请求（非二进制）强制 Cloudflare/Google ----------
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
-    // 如果是标准二进制 DNS 消息，则走正常选择逻辑（不强制）
     if (contentType.includes('application/dns-message')) {
-      // 与 GET 相同的选择逻辑
+      // 二进制：走正常选择逻辑（随机）
       if (serverId) {
         upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
         if (!upstream) {
@@ -1222,10 +1312,11 @@ async function DOHRequest(request, env, config) {
         }
       } else {
         if (config.enable_auto_select) {
-          const domain = url.searchParams.get('name') || 'google.com';
-          const type = url.searchParams.get('type') || 'A';
-          const fastest = await selectFastestUpstream(env, config, domain, type);
-          if (fastest) upstream = fastest;
+          const enabled = config.upstreams.filter(u => u.enabled);
+          if (enabled.length > 0) {
+            const randomIndex = Math.floor(Math.random() * enabled.length);
+            upstream = enabled[randomIndex];
+          }
         }
         if (!upstream) {
           const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
@@ -1235,7 +1326,6 @@ async function DOHRequest(request, env, config) {
           return new Response('没有可用的上游服务器', { status: 503 });
         }
       }
-      // 尝试转发，失败则回退（优先 Cloudflare）
       try {
         return await forwardToUpstream(request, upstream);
       } catch (err) {
@@ -1257,7 +1347,7 @@ async function DOHRequest(request, env, config) {
       }
     }
 
-    // ---------- 非二进制 POST（JSON / 表单）强制 Cloudflare/Google ----------
+    // 非二进制 POST（JSON / 表单）强制 Cloudflare/Google
     const preferredIds = ['cloudflare', 'google'];
     for (const id of preferredIds) {
       const found = config.upstreams.find(u => u.id === id && u.enabled);
@@ -1290,7 +1380,7 @@ async function DOHRequest(request, env, config) {
     }
   }
 
-  // ---------- GET 请求（原有逻辑） ----------
+  // ---------- GET 请求（随机选择） ----------
   if (serverId) {
     upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
     if (!upstream) {
@@ -1298,10 +1388,11 @@ async function DOHRequest(request, env, config) {
     }
   } else {
     if (config.enable_auto_select) {
-      const domain = url.searchParams.get('name') || 'google.com';
-      const type = url.searchParams.get('type') || 'A';
-      const fastest = await selectFastestUpstream(env, config, domain, type);
-      if (fastest) upstream = fastest;
+      const enabled = config.upstreams.filter(u => u.enabled);
+      if (enabled.length > 0) {
+        const randomIndex = Math.floor(Math.random() * enabled.length);
+        upstream = enabled[randomIndex];
+      }
     }
     if (!upstream) {
       const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
@@ -1312,7 +1403,7 @@ async function DOHRequest(request, env, config) {
     }
   }
 
-  // GET 故障转移（优先 Cloudflare）
+  // 故障转移（优先 Cloudflare）
   try {
     return await forwardToUpstream(request, upstream);
   } catch (err) {
@@ -1439,28 +1530,6 @@ async function forwardToUpstream(request, upstream) {
   }
 
   throw new Error('Method Not Allowed');
-}
-
-// ==================== IP 地理位置代理 ====================
-async function handleIpInfo(request, env) {
-  const url = new URL(request.url);
-  if (env.TOKEN) {
-    const token = url.searchParams.get('token');
-    if (token !== env.TOKEN) {
-      return json({ status: 'error', message: 'Token不正确' }, 403);
-    }
-  }
-  const ip = url.searchParams.get('ip') || request.headers.get('CF-Connecting-IP');
-  if (!ip) return json({ error: 'IP参数未提供' }, 400);
-  try {
-    const resp = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    data.timestamp = new Date().toISOString();
-    return json(data);
-  } catch (err) {
-    return json({ error: err.message }, 500);
-  }
 }
 
 // ==================== 主入口 ====================
