@@ -138,7 +138,7 @@ async function destroySession(env, request) {
   }
 }
 
-// JSON 响应辅助
+// JSON 响应辅助（用于管理面板等非 DoH 场景）
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -1456,7 +1456,7 @@ async function DOHRequest(request, env, config) {
   }
 }
 
-// ==================== 请求转发核心（含缓存） ====================
+// ==================== 请求转发核心（含缓存，去缩进） ====================
 async function forwardToUpstream(request, upstream) {
   const url = new URL(request.url);
   const method = request.method;
@@ -1473,8 +1473,6 @@ async function forwardToUpstream(request, upstream) {
   // 处理 type=all（任何方法）
   const type = searchParams.get('type') || 'A';
   if (type === 'all' && domain) {
-    // 对于 type=all，尝试缓存合并结果
-    const cacheKey = dnsCacheKey(domain, 'all');
     const cached = await getDnsCache(domain, 'all');
     if (cached) {
       return new Response(cached.body, {
@@ -1483,7 +1481,6 @@ async function forwardToUpstream(request, upstream) {
       });
     }
     const result = await queryMultipleTypes(baseUrl, domain);
-    // 计算最小 TTL
     let minTtl = 86400;
     const allAnswers = result.Answer || [];
     if (allAnswers.length > 0) {
@@ -1491,69 +1488,75 @@ async function forwardToUpstream(request, upstream) {
     } else {
       minTtl = 60;
     }
-    const resp = json(result);
+    const resp = new Response(JSON.stringify(result), {
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
     await setDnsCache(domain, 'all', resp.clone(), minTtl);
     return resp;
   }
 
-  // ---- 针对 JSON 格式的缓存 ----
-  if (method === 'GET' && searchParams.has('name')) {
-    const domain = searchParams.get('name');
-    const type = searchParams.get('type') || 'A';
-    // 尝试缓存
-    const cached = await getDnsCache(domain, type);
-    if (cached) {
-      return new Response(cached.body, {
-        status: cached.status,
-        headers: cached.headers
-      });
-    }
-    // 无缓存，向上游请求
-    const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
-    let response = await fetch(baseUrl + searchDoH, {
-      headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
-    });
-    if (!response.ok) {
-      const resolveUrl = baseUrl.replace(/\/dns-query$/, '/resolve');
-      if (resolveUrl !== baseUrl) {
-        response = await fetch(resolveUrl + searchDoH, {
-          headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+  // ---- GET 请求 ----
+  if (method === 'GET') {
+    if (searchParams.has('name')) {
+      const domain = searchParams.get('name');
+      const type = searchParams.get('type') || 'A';
+      const cached = await getDnsCache(domain, type);
+      if (cached) {
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: cached.headers
         });
       }
-    }
-    if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-    // 提取 TTL 并缓存
-    if (response.ok) {
-      const data = await response.clone().json();
-      let minTtl = 86400;
-      if (data.Answer && data.Answer.length > 0) {
-        minTtl = Math.min(...data.Answer.map(r => r.TTL));
-      } else {
-        minTtl = 60;
+      const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
+      let response = await fetch(baseUrl + searchDoH, {
+        headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+      });
+      if (!response.ok) {
+        const resolveUrl = baseUrl.replace(/\/dns-query$/, '/resolve');
+        if (resolveUrl !== baseUrl) {
+          response = await fetch(resolveUrl + searchDoH, {
+            headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+          });
+        }
       }
-      await setDnsCache(domain, type, response.clone(), minTtl);
+      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
+      // 提取 TTL 并缓存
+      if (response.ok) {
+        const data = await response.clone().json();
+        let minTtl = 86400;
+        if (data.Answer && data.Answer.length > 0) {
+          minTtl = Math.min(...data.Answer.map(r => r.TTL));
+        } else {
+          minTtl = 60;
+        }
+        await setDnsCache(domain, type, response.clone(), minTtl);
+      }
+      const respHeaders = new Headers(response.headers);
+      respHeaders.set('Access-Control-Allow-Origin', '*');
+      respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      respHeaders.set('Access-Control-Allow-Headers', '*');
+      respHeaders.set('Content-Type', 'application/json');
+      return new Response(response.body, { status: response.status, headers: respHeaders });
     }
-    const respHeaders = new Headers(response.headers);
-    respHeaders.set('Access-Control-Allow-Origin', '*');
-    respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    respHeaders.set('Access-Control-Allow-Headers', '*');
-    respHeaders.set('Content-Type', 'application/json');
-    return new Response(response.body, { status: response.status, headers: respHeaders });
+    if (url.search) {
+      // 二进制查询不缓存
+      const response = await fetch(baseUrl + url.search, {
+        headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
+      });
+      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
+      const respHeaders = new Headers(response.headers);
+      respHeaders.set('Access-Control-Allow-Origin', '*');
+      respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      respHeaders.set('Access-Control-Allow-Headers', '*');
+      return new Response(response.body, { status: response.status, headers: respHeaders });
+    }
+    throw new Error('Bad Request: missing name or dns parameter');
   }
 
-  if (method === 'GET' && url.search) {
-    // 二进制查询不缓存
-    const response = await fetch(baseUrl + url.search, {
-      headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
-    });
-    if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-    const respHeaders = new Headers(response.headers);
-    respHeaders.set('Access-Control-Allow-Origin', '*');
-    respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    respHeaders.set('Access-Control-Allow-Headers', '*');
-    return new Response(response.body, { status: response.status, headers: respHeaders });
-  }
-
+  // ---- POST 请求 ----
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
     if (contentType.includes('application/dns-message')) {
@@ -1578,7 +1581,6 @@ async function forwardToUpstream(request, upstream) {
       const type = jsonBody.type || 'A';
       if (!name) throw new Error('Missing "name" in JSON body');
 
-      // 尝试缓存
       const cached = await getDnsCache(name, type);
       if (cached) {
         return new Response(cached.body, {
@@ -1587,16 +1589,19 @@ async function forwardToUpstream(request, upstream) {
         });
       }
 
-      // 无缓存，执行查询
       const result = await queryDns(baseUrl, name, type);
-      // 计算 TTL
       let minTtl = 86400;
       if (result.Answer && result.Answer.length > 0) {
         minTtl = Math.min(...result.Answer.map(r => r.TTL));
       } else {
         minTtl = 60;
       }
-      const resp = json(result);
+      const resp = new Response(JSON.stringify(result), {
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
       await setDnsCache(name, type, resp.clone(), minTtl);
       return resp;
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -1605,7 +1610,6 @@ async function forwardToUpstream(request, upstream) {
       const type = formData.get('type') || 'A';
       if (!name) throw new Error('Missing "name" in form data');
 
-      // 尝试缓存
       const cached = await getDnsCache(name, type);
       if (cached) {
         return new Response(cached.body, {
@@ -1621,7 +1625,12 @@ async function forwardToUpstream(request, upstream) {
       } else {
         minTtl = 60;
       }
-      const resp = json(result);
+      const resp = new Response(JSON.stringify(result), {
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
       await setDnsCache(name, type, resp.clone(), minTtl);
       return resp;
     } else {
