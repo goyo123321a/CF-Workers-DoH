@@ -238,6 +238,37 @@ async function queryMultipleTypes(dohUrl, domain) {
   };
 }
 
+// ==================== DNS 缓存函数（JSON 格式） ====================
+
+function dnsCacheKey(domain, type) {
+  return `dns:${domain}:${type}`;
+}
+
+async function getDnsCache(domain, type) {
+  const cache = caches.default;
+  const key = dnsCacheKey(domain, type);
+  const url = `https://internal/${key}`;
+  const cached = await cache.match(new Request(url));
+  if (!cached) return null;
+  return cached;
+}
+
+async function setDnsCache(domain, type, response, ttl) {
+  const cache = caches.default;
+  const key = dnsCacheKey(domain, type);
+  const url = `https://internal/${key}`;
+  const cloned = response.clone();
+  const headers = new Headers(cloned.headers);
+  headers.set('Cache-Control', `max-age=${ttl}, s-maxage=${ttl}`);
+  headers.set('X-Cache-Status', 'HIT');
+  const cachedResponse = new Response(cloned.body, {
+    status: cloned.status,
+    statusText: cloned.statusText,
+    headers: headers
+  });
+  await cache.put(new Request(url), cachedResponse);
+}
+
 // ==================== 管理 API 处理器 ====================
 async function handleAdminAPI(request, env, url) {
   const auth = await requireAdmin(env, request);
@@ -1380,7 +1411,7 @@ async function DOHRequest(request, env, config) {
     }
   }
 
-  // ---------- GET 请求（随机选择） ----------
+  // ---------- GET 请求（随机选择 + 缓存） ----------
   if (serverId) {
     upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
     if (!upstream) {
@@ -1425,7 +1456,7 @@ async function DOHRequest(request, env, config) {
   }
 }
 
-// ==================== 请求转发核心（含 Google 路径适配） ====================
+// ==================== 请求转发核心（含缓存） ====================
 async function forwardToUpstream(request, upstream) {
   const url = new URL(request.url);
   const method = request.method;
@@ -1440,46 +1471,87 @@ async function forwardToUpstream(request, upstream) {
   }
 
   // 处理 type=all（任何方法）
-  if (searchParams.get('type') === 'all' && domain) {
+  const type = searchParams.get('type') || 'A';
+  if (type === 'all' && domain) {
+    // 对于 type=all，尝试缓存合并结果
+    const cacheKey = dnsCacheKey(domain, 'all');
+    const cached = await getDnsCache(domain, 'all');
+    if (cached) {
+      return new Response(cached.body, {
+        status: cached.status,
+        headers: cached.headers
+      });
+    }
     const result = await queryMultipleTypes(baseUrl, domain);
-    return json(result);
+    // 计算最小 TTL
+    let minTtl = 86400;
+    const allAnswers = result.Answer || [];
+    if (allAnswers.length > 0) {
+      minTtl = Math.min(...allAnswers.map(r => r.TTL));
+    } else {
+      minTtl = 60;
+    }
+    const resp = json(result);
+    await setDnsCache(domain, 'all', resp.clone(), minTtl);
+    return resp;
   }
 
-  if (method === 'GET') {
-    if (searchParams.has('name')) {
-      const type = searchParams.get('type') || 'A';
-      const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
-      let response = await fetch(baseUrl + searchDoH, {
-        headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+  // ---- 针对 JSON 格式的缓存 ----
+  if (method === 'GET' && searchParams.has('name')) {
+    const domain = searchParams.get('name');
+    const type = searchParams.get('type') || 'A';
+    // 尝试缓存
+    const cached = await getDnsCache(domain, type);
+    if (cached) {
+      return new Response(cached.body, {
+        status: cached.status,
+        headers: cached.headers
       });
-      if (!response.ok) {
-        const resolveUrl = baseUrl.replace(/\/dns-query$/, '/resolve');
-        if (resolveUrl !== baseUrl) {
-          response = await fetch(resolveUrl + searchDoH, {
-            headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
-          });
-        }
+    }
+    // 无缓存，向上游请求
+    const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
+    let response = await fetch(baseUrl + searchDoH, {
+      headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+    });
+    if (!response.ok) {
+      const resolveUrl = baseUrl.replace(/\/dns-query$/, '/resolve');
+      if (resolveUrl !== baseUrl) {
+        response = await fetch(resolveUrl + searchDoH, {
+          headers: { 'Accept': 'application/dns-json', 'User-Agent': UA }
+        });
       }
-      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-      const respHeaders = new Headers(response.headers);
-      respHeaders.set('Access-Control-Allow-Origin', '*');
-      respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      respHeaders.set('Access-Control-Allow-Headers', '*');
-      respHeaders.set('Content-Type', 'application/json');
-      return new Response(response.body, { status: response.status, headers: respHeaders });
     }
-    if (url.search) {
-      const response = await fetch(baseUrl + url.search, {
-        headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
-      });
-      if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-      const respHeaders = new Headers(response.headers);
-      respHeaders.set('Access-Control-Allow-Origin', '*');
-      respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      respHeaders.set('Access-Control-Allow-Headers', '*');
-      return new Response(response.body, { status: response.status, headers: respHeaders });
+    if (!response.ok) throw new Error(`Upstream error ${response.status}`);
+    // 提取 TTL 并缓存
+    if (response.ok) {
+      const data = await response.clone().json();
+      let minTtl = 86400;
+      if (data.Answer && data.Answer.length > 0) {
+        minTtl = Math.min(...data.Answer.map(r => r.TTL));
+      } else {
+        minTtl = 60;
+      }
+      await setDnsCache(domain, type, response.clone(), minTtl);
     }
-    throw new Error('Bad Request: missing name or dns parameter');
+    const respHeaders = new Headers(response.headers);
+    respHeaders.set('Access-Control-Allow-Origin', '*');
+    respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    respHeaders.set('Access-Control-Allow-Headers', '*');
+    respHeaders.set('Content-Type', 'application/json');
+    return new Response(response.body, { status: response.status, headers: respHeaders });
+  }
+
+  if (method === 'GET' && url.search) {
+    // 二进制查询不缓存
+    const response = await fetch(baseUrl + url.search, {
+      headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
+    });
+    if (!response.ok) throw new Error(`Upstream error ${response.status}`);
+    const respHeaders = new Headers(response.headers);
+    respHeaders.set('Access-Control-Allow-Origin', '*');
+    respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    respHeaders.set('Access-Control-Allow-Headers', '*');
+    return new Response(response.body, { status: response.status, headers: respHeaders });
   }
 
   if (method === 'POST') {
@@ -1506,24 +1578,52 @@ async function forwardToUpstream(request, upstream) {
       const type = jsonBody.type || 'A';
       if (!name) throw new Error('Missing "name" in JSON body');
 
-      if (type === 'all') {
-        const result = await queryMultipleTypes(baseUrl, name);
-        return json(result);
+      // 尝试缓存
+      const cached = await getDnsCache(name, type);
+      if (cached) {
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: cached.headers
+        });
       }
+
+      // 无缓存，执行查询
       const result = await queryDns(baseUrl, name, type);
-      return json(result);
+      // 计算 TTL
+      let minTtl = 86400;
+      if (result.Answer && result.Answer.length > 0) {
+        minTtl = Math.min(...result.Answer.map(r => r.TTL));
+      } else {
+        minTtl = 60;
+      }
+      const resp = json(result);
+      await setDnsCache(name, type, resp.clone(), minTtl);
+      return resp;
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const formData = await request.formData();
       const name = formData.get('name');
       const type = formData.get('type') || 'A';
       if (!name) throw new Error('Missing "name" in form data');
 
-      if (type === 'all') {
-        const result = await queryMultipleTypes(baseUrl, name);
-        return json(result);
+      // 尝试缓存
+      const cached = await getDnsCache(name, type);
+      if (cached) {
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: cached.headers
+        });
       }
+
       const result = await queryDns(baseUrl, name, type);
-      return json(result);
+      let minTtl = 86400;
+      if (result.Answer && result.Answer.length > 0) {
+        minTtl = Math.min(...result.Answer.map(r => r.TTL));
+      } else {
+        minTtl = 60;
+      }
+      const resp = json(result);
+      await setDnsCache(name, type, resp.clone(), minTtl);
+      return resp;
     } else {
       throw new Error('Unsupported Content-Type for POST');
     }
