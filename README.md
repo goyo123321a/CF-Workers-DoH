@@ -43,8 +43,6 @@ https://doh.goyo123.work.gd/ip-info
 ```url
 https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
 ```
-
-
 #### 📝 **返回信息示例**
 ```json
 {
@@ -64,6 +62,52 @@ https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
   "query": "8.8.8.8"
 }
 ```
+
+#### 🔍 查询多个指定IP信息
+```url
+https://doh.goyo123.work.gd/ip-info?ips=8.8.8.8,1.1.1.1
+```
+
+#### 📝 **返回信息示例**
+```json
+{
+  "8.8.8.8": {
+    "status": "success",
+    "country": "美国",
+    "countryCode": "US",
+    "region": "VA",
+    "regionName": "弗吉尼亚州",
+    "city": "Ashburn",
+    "zip": "20149",
+    "lat": 39.03,
+    "lon": -77.5,
+    "timezone": "America/New_York",
+    "isp": "Google LLC",
+    "org": "Google Public DNS",
+    "as": "AS15169 Google LLC",
+    "query": "8.8.8.8",
+    "timestamp": "2026-07-18T06:10:59.106Z"
+  },
+  "1.1.1.1": {
+    "status": "success",
+    "country": "Australia",
+    "countryCode": "AU",
+    "region": "QLD",
+    "regionName": "Queensland",
+    "city": "South Brisbane",
+    "zip": "4101",
+    "lat": -27.4766,
+    "lon": 153.0166,
+    "timezone": "Australia/Brisbane",
+    "isp": "Cloudflare, Inc",
+    "org": "APNIC and Cloudflare DNS Resolver project",
+    "as": "AS13335 Cloudflare, Inc.",
+    "query": "1.1.1.1",
+    "timestamp": "2026-07-18T06:11:14.606Z"
+  }
+}
+```
+
 
 > [!NOTE]
 > 请将示例中的 `doh.goyo123.work.gd` 替换为你实际部署的域名
