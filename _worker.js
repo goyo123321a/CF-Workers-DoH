@@ -269,6 +269,29 @@ async function setDnsCache(domain, type, response, ttl) {
   await cache.put(new Request(url), cachedResponse);
 }
 
+// ==================== 二进制 DNS 缓存函数（用于 ?dns=） ====================
+
+async function getBinaryCache(cacheKey) {
+  const cache = caches.default;
+  const url = `https://internal/binary/${cacheKey}`;
+  return await cache.match(new Request(url));
+}
+
+async function setBinaryCache(cacheKey, response, ttl) {
+  const cache = caches.default;
+  const url = `https://internal/binary/${cacheKey}`;
+  const cloned = response.clone();
+  const headers = new Headers(cloned.headers);
+  headers.set('Cache-Control', `max-age=${ttl}, s-maxage=${ttl}`);
+  headers.set('X-Cache-Status', 'HIT');
+  const cachedResponse = new Response(cloned.body, {
+    status: cloned.status,
+    statusText: cloned.statusText,
+    headers: headers
+  });
+  await cache.put(new Request(url), cachedResponse);
+}
+
 // ==================== 管理 API 处理器 ====================
 async function handleAdminAPI(request, env, url) {
   const auth = await requireAdmin(env, request);
@@ -1457,7 +1480,7 @@ async function DOHRequest(request, env, config) {
   }
 }
 
-// ==================== 请求转发核心（含缓存，去缩进） ====================
+// ==================== 请求转发核心（含 JSON 缓存、二进制缓存，去缩进） ====================
 async function forwardToUpstream(request, upstream) {
   const url = new URL(request.url);
   const method = request.method;
@@ -1543,11 +1566,20 @@ async function forwardToUpstream(request, upstream) {
       return new Response(response.body, { status: response.status, headers: respHeaders });
     }
     if (url.search) {
-      // 二进制查询不缓存
+      // 二进制查询：缓存 60 秒
+      const cacheKey = `binary:${url.search}`;
+      const cached = await getBinaryCache(cacheKey);
+      if (cached) {
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: cached.headers
+        });
+      }
       const response = await fetch(baseUrl + url.search, {
         headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
       });
       if (!response.ok) throw new Error(`Upstream error ${response.status}`);
+      await setBinaryCache(cacheKey, response.clone(), 60);
       const respHeaders = new Headers(response.headers);
       respHeaders.set('Access-Control-Allow-Origin', '*');
       respHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1561,6 +1593,7 @@ async function forwardToUpstream(request, upstream) {
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
     if (contentType.includes('application/dns-message')) {
+      // POST 二进制不缓存（因请求体可能较大）
       const response = await fetch(baseUrl, {
         method: 'POST',
         headers: {
