@@ -1276,7 +1276,7 @@ async function batchQueryIpInfo(ips, env) {
   return results;
 }
 
-// ==================== IP 地理位置代理（支持单 IP 和批量） ====================
+// ==================== IP 地理位置代理（支持单 IP 和批量，无参数时自动获取客户端 IP） ====================
 async function handleIpInfo(request, env) {
   const url = new URL(request.url);
   if (env.TOKEN) {
@@ -1302,26 +1302,27 @@ async function handleIpInfo(request, env) {
     return json(results);
   }
 
-  // 单 IP 查询（保持兼容）
-  if (ipParam) {
-    const cache = caches.default;
-    let cached = await getCachedIpInfo(ipParam, cache);
-    if (cached) {
-      return json(cached);
-    }
-    try {
-      const resp = await fetch(`http://ip-api.com/json/${ipParam}?lang=zh-CN`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      data.timestamp = new Date().toISOString();
-      await setCachedIpInfo(ipParam, data, cache);
-      return json(data);
-    } catch (err) {
-      return json({ error: err.message }, 500);
-    }
+  // 单 IP 查询：如果没有提供 ip 参数，自动获取客户端 IP
+  const clientIp = ipParam || request.headers.get('CF-Connecting-IP');
+  if (!clientIp) {
+    return json({ error: '无法获取客户端 IP，请提供 ip 参数' }, 400);
   }
 
-  return json({ error: '请提供 ip 或 ips 参数' }, 400);
+  const cache = caches.default;
+  let cached = await getCachedIpInfo(clientIp, cache);
+  if (cached) {
+    return json(cached);
+  }
+  try {
+    const resp = await fetch(`http://ip-api.com/json/${clientIp}?lang=zh-CN`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    data.timestamp = new Date().toISOString();
+    await setCachedIpInfo(clientIp, data, cache);
+    return json(data);
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
 }
 
 // ==================== DoH 代理核心（POST 二进制除外强制 Cloudflare/Google） ====================
