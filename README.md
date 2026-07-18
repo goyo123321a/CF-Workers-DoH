@@ -59,7 +59,8 @@ https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
   "isp": "Google LLC",
   "org": "Google Public DNS",
   "as": "AS15169 Google LLC",
-  "query": "8.8.8.8"
+  "query": "8.8.8.8",
+  "timestamp": "2026-07-18T13:27:25.017Z"
 }
 ```
 
