@@ -661,7 +661,7 @@ function renderLoginPage(message = '') {
 </html>`;
 }
 
-// ==================== 公共首页 ====================
+// ==================== 公共首页（使用批量接口查询 IP 位置） ====================
 async function renderPublicPage(env) {
   const config = await getConfig(env);
   const dohPath = config.doh_path || 'dns-query';
@@ -928,12 +928,17 @@ async function renderPublicPage(env) {
     return Math.floor(sec/86400) + '天';
   }
 
-  async function queryIpGeoInfo(ip) {
+  // ============== 批量 IP 地理位置查询（前端使用） ==============
+  async function batchQueryIpInfo(ipList) {
+    if (!ipList || ipList.length === 0) return {};
     try {
-      const resp = await fetch(\`./ip-info?ip=\${ip}&token=${dohPath}\`);
+      const resp = await fetch(\`./ip-info?ips=\${ipList.join(',')}&token=${dohPath}\`);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return await resp.json();
-    } catch(e) { console.error(e); return null; }
+    } catch(e) {
+      console.error('批量查询失败:', e);
+      return {};
+    }
   }
 
   function handleCopyClick(el, text) {
@@ -943,12 +948,26 @@ async function renderPublicPage(env) {
     }).catch(err => console.error(err));
   }
 
-  function displayRecords(data) {
+  // ============== 显示记录（批量获取 IP 信息） ==============
+  async function displayRecords(data) {
     document.getElementById('resultContainer').style.display = 'block';
     document.getElementById('errorContainer').style.display = 'none';
     document.getElementById('result').textContent = JSON.stringify(data, null, 2);
 
+    // 收集所有需要查询的 IP（A 和 AAAA 记录）
+    const ipList = [];
     const ipv4Records = data.ipv4?.records || [];
+    const ipv6Records = data.ipv6?.records || [];
+    ipv4Records.forEach(r => { if (r.type === 1) ipList.push(r.data); });
+    ipv6Records.forEach(r => { if (r.type === 28) ipList.push(r.data); });
+
+    // 批量查询地理位置（如果有 IP）
+    let geoMap = {};
+    if (ipList.length > 0) {
+      geoMap = await batchQueryIpInfo(ipList);
+    }
+
+    // -------- IPv4 --------
     const ipv4Container = document.getElementById('ipv4Records');
     ipv4Container.innerHTML = '';
     if (ipv4Records.length === 0) {
@@ -970,50 +989,28 @@ async function renderPublicPage(env) {
           const copyEl = div.querySelector('.ip-address');
           copyEl.addEventListener('click', function() { handleCopyClick(this, this.dataset.copy); });
         } else if (record.type === 1) {
+          const ip = record.data;
+          const geo = geoMap[ip] || {};
+          const isBlocked = isBlockedIP(ip);
+          const country = geo.country || (isBlocked ? '阻断IP' : '');
+          const as = geo.as || '';
+          const geoDisplay = isBlocked ? '<span class="geo-blocked">阻断IP</span>' :
+                             (country || as ? \`<span class="geo-country">\${country}</span> <span class="geo-as">\${as}</span>\` : '');
           div.innerHTML = \`
             <div class="d-flex justify-content-between align-items-center">
-              <span class="ip-address" data-copy="\${record.data}">\${record.data}</span>
-              <span class="geo-info geo-loading">正在获取位置信息...</span>
+              <span class="ip-address" data-copy="\${ip}">\${ip}</span>
+              <span class="geo-info">\${geoDisplay}</span>
               <span class="text-muted ttl-info">TTL: \${formatTTL(record.TTL)}</span>
             </div>
           \`;
           ipv4Container.appendChild(div);
           const copyEl = div.querySelector('.ip-address');
           copyEl.addEventListener('click', function() { handleCopyClick(this, this.dataset.copy); });
-          const geoSpan = div.querySelector('.geo-info');
-          const ip = record.data;
-          if (isBlockedIP(ip)) {
-            queryIpGeoInfo(ip).then(geo => {
-              geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-              const b = document.createElement('span'); b.className = 'geo-blocked'; b.textContent = '阻断IP';
-              geoSpan.appendChild(b);
-              if (geo && geo.status === 'success' && geo.as) {
-                const as = document.createElement('span'); as.className = 'geo-as'; as.textContent = geo.as;
-                geoSpan.appendChild(as);
-              }
-            }).catch(() => {
-              geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-              const b = document.createElement('span'); b.className = 'geo-blocked'; b.textContent = '阻断IP';
-              geoSpan.appendChild(b);
-            });
-          } else {
-            queryIpGeoInfo(ip).then(geo => {
-              if (geo && geo.status === 'success') {
-                geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-                const c = document.createElement('span'); c.className = 'geo-country'; c.textContent = geo.country || '未知国家';
-                geoSpan.appendChild(c);
-                const as = document.createElement('span'); as.className = 'geo-as'; as.textContent = geo.as || '未知 AS';
-                geoSpan.appendChild(as);
-              } else {
-                geoSpan.textContent = '位置信息获取失败';
-              }
-            });
-          }
         }
       });
     }
 
-    const ipv6Records = data.ipv6?.records || [];
+    // -------- IPv6 --------
     const ipv6Container = document.getElementById('ipv6Records');
     ipv6Container.innerHTML = '';
     if (ipv6Records.length === 0) {
@@ -1035,49 +1032,28 @@ async function renderPublicPage(env) {
           const copyEl = div.querySelector('.ip-address');
           copyEl.addEventListener('click', function() { handleCopyClick(this, this.dataset.copy); });
         } else if (record.type === 28) {
+          const ip = record.data;
+          const geo = geoMap[ip] || {};
+          const isBlocked = isBlockedIP(ip);
+          const country = geo.country || (isBlocked ? '阻断IP' : '');
+          const as = geo.as || '';
+          const geoDisplay = isBlocked ? '<span class="geo-blocked">阻断IP</span>' :
+                             (country || as ? \`<span class="geo-country">\${country}</span> <span class="geo-as">\${as}</span>\` : '');
           div.innerHTML = \`
             <div class="d-flex justify-content-between align-items-center">
-              <span class="ip-address" data-copy="\${record.data}">\${record.data}</span>
-              <span class="geo-info geo-loading">正在获取位置信息...</span>
+              <span class="ip-address" data-copy="\${ip}">\${ip}</span>
+              <span class="geo-info">\${geoDisplay}</span>
               <span class="text-muted ttl-info">TTL: \${formatTTL(record.TTL)}</span>
             </div>
           \`;
           ipv6Container.appendChild(div);
           const copyEl = div.querySelector('.ip-address');
           copyEl.addEventListener('click', function() { handleCopyClick(this, this.dataset.copy); });
-          const geoSpan = div.querySelector('.geo-info');
-          const ip = record.data;
-          if (isBlockedIP(ip)) {
-            queryIpGeoInfo(ip).then(geo => {
-              geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-              const b = document.createElement('span'); b.className = 'geo-blocked'; b.textContent = '阻断IP';
-              geoSpan.appendChild(b);
-              if (geo && geo.status === 'success' && geo.as) {
-                const as = document.createElement('span'); as.className = 'geo-as'; as.textContent = geo.as;
-                geoSpan.appendChild(as);
-              }
-            }).catch(() => {
-              geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-              const b = document.createElement('span'); b.className = 'geo-blocked'; b.textContent = '阻断IP';
-              geoSpan.appendChild(b);
-            });
-          } else {
-            queryIpGeoInfo(ip).then(geo => {
-              if (geo && geo.status === 'success') {
-                geoSpan.innerHTML = ''; geoSpan.classList.remove('geo-loading');
-                const c = document.createElement('span'); c.className = 'geo-country'; c.textContent = geo.country || '未知国家';
-                geoSpan.appendChild(c);
-                const as = document.createElement('span'); as.className = 'geo-as'; as.textContent = geo.as || '未知 AS';
-                geoSpan.appendChild(as);
-              } else {
-                geoSpan.textContent = '位置信息获取失败';
-              }
-            });
-          }
         }
       });
     }
 
+    // -------- NS 记录（保持不变） --------
     const nsRecords = data.ns?.records || [];
     const nsContainer = document.getElementById('nsRecords');
     nsContainer.innerHTML = '';
@@ -1163,7 +1139,9 @@ async function renderPublicPage(env) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const json = await resp.json();
       if (json.error) displayError(json.error);
-      else displayRecords(json);
+      else {
+        await displayRecords(json); // 异步等待批量查询完成
+      }
     } catch(err) {
       displayError('查询失败: ' + err.message);
     } finally {
@@ -1205,7 +1183,7 @@ async function renderPublicPage(env) {
   });
 }
 
-// ==================== IP 地理位置批量查询（带 Cache API 缓存） ====================
+// ==================== IP 地理位置批量查询（服务端，支持中文） ====================
 
 // 生成缓存键
 function ipCacheKey(ip) {
@@ -1219,7 +1197,6 @@ async function getCachedIpInfo(ip, cache) {
   const cachedResponse = await cache.match(new Request(cacheUrl));
   if (!cachedResponse) return null;
   const data = await cachedResponse.json();
-  // 检查是否过期（Cache-Control 已控制，但以防万一）
   if (data._cachedAt && (Date.now() - data._cachedAt > 3600 * 1000)) {
     await cache.delete(new Request(cacheUrl));
     return null;
@@ -1233,7 +1210,6 @@ async function setCachedIpInfo(ip, data, cache) {
   const cacheKey = ipCacheKey(ip);
   const cacheUrl = `https://internal/${cacheKey}`;
   const toStore = { ...data, _cachedAt: Date.now() };
-  // 成功缓存 1 小时，失败缓存 60 秒
   const maxAge = (data.status === 'success') ? 3600 : 60;
   const response = new Response(JSON.stringify(toStore), {
     headers: {
@@ -1244,13 +1220,12 @@ async function setCachedIpInfo(ip, data, cache) {
   await cache.put(new Request(cacheUrl), response);
 }
 
-// 批量查询（自动处理缓存）
+// 批量查询（自动处理缓存，支持中文）
 async function batchQueryIpInfo(ips, env) {
   const cache = caches.default;
   const results = {};
   const uncached = [];
 
-  // 1. 先从缓存读取
   for (const ip of ips) {
     const cached = await getCachedIpInfo(ip, cache);
     if (cached) {
@@ -1260,13 +1235,13 @@ async function batchQueryIpInfo(ips, env) {
     }
   }
 
-  // 2. 如果有未缓存的，发起 batch 请求
   if (uncached.length > 0) {
     const batchSize = 100;
     for (let i = 0; i < uncached.length; i += batchSize) {
       const batch = uncached.slice(i, i + batchSize);
       try {
-        const resp = await fetch('http://ip-api.com/batch', {
+        // 使用 lang=zh-CN 返回中文
+        const resp = await fetch('http://ip-api.com/batch?lang=zh-CN', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(batch)
@@ -1325,7 +1300,7 @@ async function handleIpInfo(request, env) {
     return json(results);
   }
 
-  // 单 IP 查询：如果没有提供 ip 参数，自动获取客户端 IP
+  // 单 IP 查询（自动获取客户端 IP）
   const clientIp = ipParam || request.headers.get('CF-Connecting-IP');
   if (!clientIp) {
     return json({ error: '无法获取客户端 IP，请提供 ip 参数' }, 400);
@@ -1348,23 +1323,20 @@ async function handleIpInfo(request, env) {
   }
 }
 
-// ==================== DoH 代理核心（POST 二进制除外强制 Cloudflare/Google） ====================
+// ==================== DoH 代理核心 ====================
 async function DOHRequest(request, env, config) {
   const url = new URL(request.url);
   const method = request.method;
   const serverId = url.searchParams.get('server');
   let upstream = null;
 
-  // ---------- POST 请求（非二进制）强制 Cloudflare/Google ----------
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
     if (contentType.includes('application/dns-message')) {
-      // 二进制：走正常选择逻辑（随机）
+      // 二进制 POST：走正常选择
       if (serverId) {
         upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
-        if (!upstream) {
-          return new Response('指定的上游不存在或已禁用', { status: 400 });
-        }
+        if (!upstream) return new Response('指定的上游不存在或已禁用', { status: 400 });
       } else {
         if (config.enable_auto_select) {
           const enabled = config.upstreams.filter(u => u.enabled);
@@ -1377,28 +1349,17 @@ async function DOHRequest(request, env, config) {
           const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
           if (fallback) upstream = fallback;
         }
-        if (!upstream) {
-          return new Response('没有可用的上游服务器', { status: 503 });
-        }
+        if (!upstream) return new Response('没有可用的上游服务器', { status: 503 });
       }
       try {
         return await forwardToUpstream(request, upstream);
       } catch (err) {
         const allEnabled = config.upstreams.filter(u => u.enabled && u.id !== upstream.id);
-        allEnabled.sort((a, b) => {
-          if (a.id === 'cloudflare') return -1;
-          if (b.id === 'cloudflare') return 1;
-          return 0;
-        });
+        allEnabled.sort((a, b) => { if (a.id === 'cloudflare') return -1; if (b.id === 'cloudflare') return 1; return 0; });
         for (const fallback of allEnabled) {
-          try {
-            return await forwardToUpstream(request, fallback);
-          } catch (_) {}
+          try { return await forwardToUpstream(request, fallback); } catch (_) {}
         }
-        return new Response(JSON.stringify({ error: `所有上游均失败: ${err.message}` }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return new Response(JSON.stringify({ error: `所有上游均失败: ${err.message}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
       }
     }
 
@@ -1406,41 +1367,27 @@ async function DOHRequest(request, env, config) {
     const preferredIds = ['cloudflare', 'google'];
     for (const id of preferredIds) {
       const found = config.upstreams.find(u => u.id === id && u.enabled);
-      if (found) {
-        upstream = found;
-        break;
-      }
+      if (found) { upstream = found; break; }
     }
     if (!upstream) {
-      return new Response(JSON.stringify({ error: '没有可用于 POST 请求的上游 (Cloudflare/Google 未启用)' }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(JSON.stringify({ error: '没有可用于 POST 请求的上游 (Cloudflare/Google 未启用)' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
     }
-
     try {
       return await forwardToUpstream(request, upstream);
     } catch (err) {
       const fallbackId = upstream.id === 'cloudflare' ? 'google' : 'cloudflare';
       const fallback = config.upstreams.find(u => u.id === fallbackId && u.enabled);
       if (fallback) {
-        try {
-          return await forwardToUpstream(request, fallback);
-        } catch (_) {}
+        try { return await forwardToUpstream(request, fallback); } catch (_) {}
       }
-      return new Response(JSON.stringify({ error: `POST 请求失败: ${err.message}` }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(JSON.stringify({ error: `POST 请求失败: ${err.message}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
   }
 
-  // ---------- GET 请求（随机选择 + 缓存） ----------
+  // GET 请求
   if (serverId) {
     upstream = config.upstreams.find(u => u.id === serverId && u.enabled);
-    if (!upstream) {
-      return new Response('指定的上游不存在或已禁用', { status: 400 });
-    }
+    if (!upstream) return new Response('指定的上游不存在或已禁用', { status: 400 });
   } else {
     if (config.enable_auto_select) {
       const enabled = config.upstreams.filter(u => u.enabled);
@@ -1453,34 +1400,22 @@ async function DOHRequest(request, env, config) {
       const fallback = config.upstreams.find(u => u.id === config.default && u.enabled);
       if (fallback) upstream = fallback;
     }
-    if (!upstream) {
-      return new Response('没有可用的上游服务器', { status: 503 });
-    }
+    if (!upstream) return new Response('没有可用的上游服务器', { status: 503 });
   }
 
-  // 故障转移（优先 Cloudflare）
   try {
     return await forwardToUpstream(request, upstream);
   } catch (err) {
     const allEnabled = config.upstreams.filter(u => u.enabled && u.id !== upstream.id);
-    allEnabled.sort((a, b) => {
-      if (a.id === 'cloudflare') return -1;
-      if (b.id === 'cloudflare') return 1;
-      return 0;
-    });
+    allEnabled.sort((a, b) => { if (a.id === 'cloudflare') return -1; if (b.id === 'cloudflare') return 1; return 0; });
     for (const fallback of allEnabled) {
-      try {
-        return await forwardToUpstream(request, fallback);
-      } catch (_) {}
+      try { return await forwardToUpstream(request, fallback); } catch (_) {}
     }
-    return new Response(JSON.stringify({ error: `所有上游均失败: ${err.message}` }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(JSON.stringify({ error: `所有上游均失败: ${err.message}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
-// ==================== 请求转发核心（含 JSON 缓存、二进制缓存，去缩进） ====================
+// ==================== 请求转发核心 ====================
 async function forwardToUpstream(request, upstream) {
   const url = new URL(request.url);
   const method = request.method;
@@ -1488,21 +1423,16 @@ async function forwardToUpstream(request, upstream) {
   const domain = searchParams.get('name');
   const UA = request.headers.get('User-Agent') || 'DoH Client';
 
-  // Google DoH 特殊处理：使用 /resolve 端点
   let baseUrl = upstream.url;
   if (baseUrl.includes('dns.google')) {
     baseUrl = baseUrl.replace('/dns-query', '/resolve');
   }
 
-  // 处理 type=all（任何方法）
   const type = searchParams.get('type') || 'A';
   if (type === 'all' && domain) {
     const cached = await getDnsCache(domain, 'all');
     if (cached) {
-      return new Response(cached.body, {
-        status: cached.status,
-        headers: cached.headers
-      });
+      return new Response(cached.body, { status: cached.status, headers: cached.headers });
     }
     const result = await queryMultipleTypes(baseUrl, domain);
     let minTtl = 86400;
@@ -1522,17 +1452,13 @@ async function forwardToUpstream(request, upstream) {
     return resp;
   }
 
-  // ---- GET 请求 ----
   if (method === 'GET') {
     if (searchParams.has('name')) {
       const domain = searchParams.get('name');
       const type = searchParams.get('type') || 'A';
       const cached = await getDnsCache(domain, type);
       if (cached) {
-        return new Response(cached.body, {
-          status: cached.status,
-          headers: cached.headers
-        });
+        return new Response(cached.body, { status: cached.status, headers: cached.headers });
       }
       const searchDoH = searchParams.has('type') ? url.search : url.search + '&type=A';
       let response = await fetch(baseUrl + searchDoH, {
@@ -1547,7 +1473,6 @@ async function forwardToUpstream(request, upstream) {
         }
       }
       if (!response.ok) throw new Error(`Upstream error ${response.status}`);
-      // 提取 TTL 并缓存
       if (response.ok) {
         const data = await response.clone().json();
         let minTtl = 86400;
@@ -1566,14 +1491,10 @@ async function forwardToUpstream(request, upstream) {
       return new Response(response.body, { status: response.status, headers: respHeaders });
     }
     if (url.search) {
-      // 二进制查询：缓存 60 秒
       const cacheKey = `binary:${url.search}`;
       const cached = await getBinaryCache(cacheKey);
       if (cached) {
-        return new Response(cached.body, {
-          status: cached.status,
-          headers: cached.headers
-        });
+        return new Response(cached.body, { status: cached.status, headers: cached.headers });
       }
       const response = await fetch(baseUrl + url.search, {
         headers: { 'Accept': 'application/dns-message', 'User-Agent': UA }
@@ -1589,11 +1510,9 @@ async function forwardToUpstream(request, upstream) {
     throw new Error('Bad Request: missing name or dns parameter');
   }
 
-  // ---- POST 请求 ----
   if (method === 'POST') {
     const contentType = request.headers.get('Content-Type') || '';
     if (contentType.includes('application/dns-message')) {
-      // POST 二进制不缓存（因请求体可能较大）
       const response = await fetch(baseUrl, {
         method: 'POST',
         headers: {
@@ -1614,15 +1533,10 @@ async function forwardToUpstream(request, upstream) {
       const name = jsonBody.name;
       const type = jsonBody.type || 'A';
       if (!name) throw new Error('Missing "name" in JSON body');
-
       const cached = await getDnsCache(name, type);
       if (cached) {
-        return new Response(cached.body, {
-          status: cached.status,
-          headers: cached.headers
-        });
+        return new Response(cached.body, { status: cached.status, headers: cached.headers });
       }
-
       const result = await queryDns(baseUrl, name, type);
       let minTtl = 86400;
       if (result.Answer && result.Answer.length > 0) {
@@ -1643,15 +1557,10 @@ async function forwardToUpstream(request, upstream) {
       const name = formData.get('name');
       const type = formData.get('type') || 'A';
       if (!name) throw new Error('Missing "name" in form data');
-
       const cached = await getDnsCache(name, type);
       if (cached) {
-        return new Response(cached.body, {
-          status: cached.status,
-          headers: cached.headers
-        });
+        return new Response(cached.body, { status: cached.status, headers: cached.headers });
       }
-
       const result = await queryDns(baseUrl, name, type);
       let minTtl = 86400;
       if (result.Answer && result.Answer.length > 0) {
@@ -1693,7 +1602,6 @@ export default {
       });
     }
 
-    // 管理员登录 API
     if (path === '/api/admin/login' && method === 'POST') {
       return await handleLogin(request, env);
     }
@@ -1704,17 +1612,14 @@ export default {
       return json({ success: true });
     }
 
-    // 管理 API
     if (path.startsWith('/api/admin/')) {
       return await handleAdminAPI(request, env, url);
     }
 
-    // 公共 API：上游列表
     if (path === '/api/public/upstreams') {
       return await handlePublicUpstreams(env);
     }
 
-    // 管理员页面
     if (path === '/admin') {
       const username = await validateSession(env, request);
       if (username) {
@@ -1724,19 +1629,16 @@ export default {
       }
     }
 
-    // DoH 端点
     const config = await getConfig(env);
     const dohPath = config.doh_path || 'dns-query';
     if (path === `/${dohPath}`) {
       return await DOHRequest(request, env, config);
     }
 
-    // IP 信息
     if (path === '/ip-info') {
       return await handleIpInfo(request, env);
     }
 
-    // 兼容 ?doh= 参数
     if (url.searchParams.has('doh')) {
       const doh = url.searchParams.get('doh');
       const domain = url.searchParams.get('domain') || url.searchParams.get('name');
@@ -1763,13 +1665,11 @@ export default {
       return await DOHRequest(new Request(newUrl.toString(), request), env, config);
     }
 
-    // 重定向 / 代理
     if (env.URL302) return Response.redirect(env.URL302, 302);
     if (env.URL) {
       // 可扩展代理
     }
 
-    // 默认返回公共首页
     return await renderPublicPage(env);
   }
 };
