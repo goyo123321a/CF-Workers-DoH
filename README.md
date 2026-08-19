@@ -87,11 +87,11 @@ https://doh.goyo123.work.gd/ip-info?ips=8.8.8.8,1.1.1.1
     "org": "Google Public DNS",
     "as": "AS15169 Google LLC",
     "query": "8.8.8.8",
-    "timestamp": "2026-07-18T06:10:59.106Z"
+    "timestamp": "2026-08-19T12:44:24.096Z"
   },
   "1.1.1.1": {
     "status": "success",
-    "country": "Australia",
+    "country": "澳大利亞",
     "countryCode": "AU",
     "region": "QLD",
     "regionName": "Queensland",
@@ -104,7 +104,7 @@ https://doh.goyo123.work.gd/ip-info?ips=8.8.8.8,1.1.1.1
     "org": "APNIC and Cloudflare DNS Resolver project",
     "as": "AS13335 Cloudflare, Inc.",
     "query": "1.1.1.1",
-    "timestamp": "2026-07-18T06:11:14.606Z"
+    "timestamp": "2026-08-19T12:44:37.906Z"
   }
 }
 ```
