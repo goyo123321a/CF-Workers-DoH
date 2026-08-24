@@ -187,6 +187,15 @@ https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A
 Chrome/Edge: 设置 → 隐私和安全 → 安全 → 使用安全 DNS → 自定义
 填入: https://doh.goyo123.work.gd/cf-doh
 
+# 第一次向上游请求（MISS）
+```bash
+curl -i "https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A"
+```
+# 第二次命中缓存（HIT）
+```bash
+curl -i "https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A"
+```
+
 ## ⭐ Star 星星走起
 [![Stargazers over time](https://starchart.cc/cmliu/CF-Workers-DoH.svg?variant=adaptive)](https://starchart.cc/cmliu/CF-Workers-DoH)
 
