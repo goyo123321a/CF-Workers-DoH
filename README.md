@@ -38,7 +38,10 @@ https://doh.goyo123.work.gd/cf-doh
 ```url
 https://doh.goyo123.work.gd/ip-info
 ```
-
+- 带TOKEN
+```url
+https://doh.goyo123.work.gd/ip-info?token=123456
+```
 #### 🔍 查询指定IP信息
 ```url
 https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
