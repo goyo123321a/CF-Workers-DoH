@@ -48,7 +48,7 @@ https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8
 ```
 - 带TOKEN
 ```url
-https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8?token=123456
+https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8&token=123456
 ```
 #### 📝 **返回信息示例**
 ```json
@@ -77,7 +77,7 @@ https://doh.goyo123.work.gd/ip-info?ips=8.8.8.8,1.1.1.1
 ```
 - 带TOKEN
 ```url
-https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8,1.1.1.1?token=123456
+https://doh.goyo123.work.gd/ip-info?ip=8.8.8.8,1.1.1.1&token=123456
 ```
 #### 📝 **返回信息示例**
 ```json
