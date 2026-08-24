@@ -121,6 +121,9 @@ https://doh.goyo123.work.gd/ip-info?ips=8.8.8.8,1.1.1.1
 |--------|----------|--------|------|
 | ADMIN_USER | 否 | admin | 管理员登录用户名 admin |
 | ADMIN_PASS | 否 | 123321 | 管理员登录密码 123321 |
+| SESSION_TTL | 否 | 3600 | 管理会话有效期（秒） 3600 |
+| DOH_PATH | 否 | dns-query | 端点路径(如 my-doh) |
+| TOKEN | 否 | 空 | 保护 /ip-info 接口的令牌（随机字符串） 空（不设则接口开放） |
 
 ### KV绑定用(创建KV名称随意)
 DOH_CONFIG
