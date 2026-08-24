@@ -221,16 +221,16 @@ curl -i "https://doh.goyo123.work.gd/cf-doh?name=google.com&type=A"
 dnsCacheKey(domain, type)
 ```
 
-· 格式：dns:域名:类型标识
-· 域名统一转为 小写。
-· 类型标识规则：
-  · 若 type 为严格的大写字符串 "ALL"，则标识为 "ALL"。
-  · 其他类型（如 "A"、"AAAA"、"NS"、"all" 等）均通过 normalizeType() 转为标准数字：
-    · A → 1
-    · AAAA → 28
-    · NS → 2
-    · all（小写）→ 0
-    · ALL（大写）→ 特殊处理为 "ALL"（不是数字 0）
+- 格式：dns:域名:类型标识
+- 域名统一转为 小写。
+- 类型标识规则：
+  - 若 type 为严格的大写字符串 "ALL"，则标识为 "ALL"。
+  - 其他类型（如 "A"、"AAAA"、"NS"、"all" 等）均通过 normalizeType() 转为标准数字：
+    - A → 1
+    - AAAA → 28
+    - NS → 2
+    - all（小写）→ 0
+    - ALL（大写）→ 特殊处理为 "ALL"（不是数字 0）
 
 2.2 二进制缓存键
 
@@ -238,18 +238,18 @@ dnsCacheKey(domain, type)
 binaryCacheKey(domain, type)
 ```
 
-· 格式：binary:域名:类型数字
-· 域名统一转为小写。
-· 类型必须为数字（例如 1、28、2），不区分大小写（因为二进制查询解析出的类型就是数字）。
+- 格式：binary:域名:类型数字
+- 域名统一转为小写。
+- 类型必须为数字（例如 1、28、2），不区分大小写（因为二进制查询解析出的类型就是数字）。
 
 ---
 
 3. 缓存过期策略（TTL）
 
-· TTL 来源：从上游 DNS 响应中提取所有记录（Answer）的最小 TTL 值。
-· 兜底 TTL：若响应无记录，则使用默认值 60 秒。
-· 强制范围：最终 TTL 限制在 60 ~ 86400 秒（1 分钟至 24 小时）。
-· 缓存头设置：通过 Cache-Control: max-age=${ttl} 控制缓存有效期。
+- TTL 来源：从上游 DNS 响应中提取所有记录（Answer）的最小 TTL 值。
+- 兜底 TTL：若响应无记录，则使用默认值 60 秒。
+- 强制范围：最终 TTL 限制在 60 ~ 86400 秒（1 分钟至 24 小时）。
+- 缓存头设置：通过 Cache-Control: max-age=${ttl} 控制缓存有效期。
 
 注意：不同边缘节点的缓存独立，TTL 从各自缓存写入时刻开始倒计时，因此同一时刻不同节点可能返回不同的剩余 TTL。
 
@@ -257,15 +257,15 @@ binaryCacheKey(domain, type)
 
 4. 大小写敏感（ALL vs all）
 
-· type=ALL（大写）：
-  · JSON 缓存键为 dns:域名:ALL，独立于小写 all。
-  · 该分支会向上游请求 type=255（所有记录），返回完整 DNS 记录（含 MX、TXT 等）。
-  · 不会拆分 A/AAAA 缓存，仅独立缓存完整响应。
-· type=all（小写）：
-  · JSON 缓存键为 dns:域名:0（数字 0）。
-  · 该分支并发请求 A、AAAA、NS 三种类型，只返回这三种记录。
-  · 会拆分 A 和 AAAA 分别存入单类型缓存（JSON + 二进制），供后续单独查询使用。
-· 目的：满足不同客户端的差异化需求，同时避免缓存污染。
+- type=ALL（大写）：
+  - JSON 缓存键为 dns:域名:ALL，独立于小写 all。
+  - 该分支会向上游请求 type=255（所有记录），返回完整 DNS 记录（含 MX、TXT 等）。
+  - 不会拆分 A/AAAA 缓存，仅独立缓存完整响应。
+- type=all（小写）：
+  - JSON 缓存键为 dns:域名:0（数字 0）。
+  - 该分支并发请求 A、AAAA、NS 三种类型，只返回这三种记录。
+  - 会拆分 A 和 AAAA 分别存入单类型缓存（JSON + 二进制），供后续单独查询使用。
+- 目的：满足不同客户端的差异化需求，同时避免缓存污染。
 
 ---
 
@@ -273,8 +273,8 @@ binaryCacheKey(domain, type)
 
 为实现缓存最大化利用，服务采用了双向转换机制：
 
-·- JSON → 二进制：当 JSON 查询命中或从上游获取后，会调用 jsonResponseToWire() 转换为二进制响应，并通过 setBinaryCache() 存入二进制缓存。
-·- 二进制 → JSON：当二进制查询命中或从上游获取后，会调用 dnsWireToJson() 转换为 JSON 响应，并通过 setDnsCache() 存入 JSON 缓存。
+- JSON → 二进制：当 JSON 查询命中或从上游获取后，会调用 jsonResponseToWire() 转换为二进制响应，并通过 setBinaryCache() 存入二进制缓存。
+- 二进制 → JSON：当二进制查询命中或从上游获取后，会调用 dnsWireToJson() 转换为 JSON 响应，并通过 setDnsCache() 存入 JSON 缓存。
 
 因此，无论客户端使用哪种格式（application/dns-json 或 application/dns-message），后续相同域名和类型的任意格式请求都能命中缓存。
 
@@ -282,18 +282,18 @@ binaryCacheKey(domain, type)
 
 6. 单类型缓存与 type=all 的关系
 
-· type=all（小写） 查询后，会从合并结果中提取 A 和 AAAA 记录，分别存入单类型缓存（键为 dns:域名:1 和 dns:域名:28）。
-· 单独 type=A 或 type=AAAA 查询 会首先查找自己的单类型缓存，若未命中则尝试从 all 缓存中提取对应记录（回退逻辑），从而保证一致性。
-· type=ALL（大写） 不参与拆分，也不影响上述缓存。
+- type=all（小写） 查询后，会从合并结果中提取 A 和 AAAA 记录，分别存入单类型缓存（键为 dns:域名:1 和 dns:域名:28）。
+- 单独 type=A 或 type=AAAA 查询 会首先查找自己的单类型缓存，若未命中则尝试从 all 缓存中提取对应记录（回退逻辑），从而保证一致性。
+- type=ALL（大写） 不参与拆分，也不影响上述缓存。
 
 ---
 
 7. 地理节点与缓存独立性
 
-· Cloudflare Workers 的 caches.default 在每个边缘节点（PoP）上独立存储，不跨节点共享。
-· 不同地区的客户端 可能被分配到不同的边缘节点，因此：
-  · 每个节点的缓存内容可能不同（因为上游 DoH 会根据出口 IP 返回就近 IP）。
-  · 同一地区内的所有请求共享该节点的缓存，实现快速响应。
+- Cloudflare Workers 的 caches.default 在每个边缘节点（PoP）上独立存储，不跨节点共享。
+- 不同地区的客户端 可能被分配到不同的边缘节点，因此：
+  - 每个节点的缓存内容可能不同（因为上游 DoH 会根据出口 IP 返回就近 IP）。
+  - 同一地区内的所有请求共享该节点的缓存，实现快速响应。
 · 跨节点缓存独立是必要的，以保证地域化解析结果（地理负载均衡），避免用户拿到远端 IP 导致访问延迟。
 
 ---
@@ -311,9 +311,9 @@ X-Cache-Status 由 setDnsCache / setBinaryCache 添加，标记写入缓存成�
 
 9. 管理建议
 
-· 监控缓存命中率：可通过 X-Cache 头或 Cloudflare 分析面板观察。
-· 调整 TTL 范围：若需修改最小/最大 TTL 限制，可修改 extractMinTtlFromBinary 和缓存写入逻辑中的边界值。
-· 清空缓存：缓存会自动过期，也可通过修改缓存键（如变更 doh_path）间接失效，但无需手动干预。
+- 监控缓存命中率：可通过 X-Cache 头或 Cloudflare 分析面板观察。
+- 调整 TTL 范围：若需修改最小/最大 TTL 限制，可修改 extractMinTtlFromBinary 和缓存写入逻辑中的边界值。
+- 清空缓存：缓存会自动过期，也可通过修改缓存键（如变更 doh_path）间接失效，但无需手动干预。
 
 ---
 
