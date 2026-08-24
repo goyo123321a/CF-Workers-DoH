@@ -322,7 +322,7 @@ X-Cache-Status 由 setDnsCache / setBinaryCache 添加，标记写入缓存成�
 Q1：为什么 curl 和面板返回的 TTL 不同？
 
 A：即使在同一节点，不同时刻请求也会因 TTL 倒计时导致剩余时间不同。若来自不同节点，则缓存独立，差异更明显。
-
+B: 使用cf节点时面板和curl返回结果不同，因为面板在cf，所以用的ProxyIP请求DNS
 Q2：type=ALL 和 type=all 的缓存能否共用？
 
 A：不能，因为缓存键不同（ALL 与 0），且返回内容不同（完整 vs 仅 A/AAAA/NS）。
