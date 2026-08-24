@@ -274,6 +274,7 @@ binaryCacheKey(domain, type)
 为实现缓存最大化利用，服务采用了双向转换机制：
 
 · JSON → 二进制：当 JSON 查询命中或从上游获取后，会调用 jsonResponseToWire() 转换为二进制响应，并通过 setBinaryCache() 存入二进制缓存。
+
 · 二进制 → JSON：当二进制查询命中或从上游获取后，会调用 dnsWireToJson() 转换为 JSON 响应，并通过 setDnsCache() 存入 JSON 缓存。
 
 因此，无论客户端使用哪种格式（application/dns-json 或 application/dns-message），后续相同域名和类型的任意格式请求都能命中缓存。
