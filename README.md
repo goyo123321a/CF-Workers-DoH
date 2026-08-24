@@ -339,7 +339,6 @@ A：不会，每个节点独立缓存来自上游的响应，只是加速重复�
 
 ---
 
-如需进一步调整缓存行为，可修改代码中的相关函数（setDnsCache、setBinaryCache、dnsCacheKey、binaryCacheKey），但建议保持现有设计以充分利用边缘缓存优势。
 
 ## ⭐ Star 星星走起
 [![Stargazers over time](https://starchart.cc/cmliu/CF-Workers-DoH.svg?variant=adaptive)](https://starchart.cc/cmliu/CF-Workers-DoH)
